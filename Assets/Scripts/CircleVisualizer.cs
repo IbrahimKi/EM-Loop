@@ -1,5 +1,4 @@
 using UnityEngine;
-using System.Collections.Generic;
 
 [RequireComponent(typeof(LineRenderer))]
 public class CircleVisualizer : MonoBehaviour
@@ -8,44 +7,26 @@ public class CircleVisualizer : MonoBehaviour
     [SerializeField] private float lineWidth = 0.1f;
     [SerializeField] private Color drawColor = Color.yellow;
     [SerializeField] private Color confirmColor = Color.green;
-    [SerializeField] private float heightOffset = 0.1f;
-    [SerializeField] private Transform sphereCenter;
-    
-    [Header("Performance")]
-    [SerializeField] private int maxCacheSize = 100;
-    [SerializeField] private int circleSegments = 32;
     
     private LineRenderer lineRenderer;
-    private Camera cam;
     private Coroutine confirmRoutine;
-    
-    // OPTIMIERUNG: Pre-allocated arrays
-    private Vector3[] pathCache;
-    private Vector3[] circleCache;
-    
-    // OPTIMIERUNG: Cached tangent basis
-    private Vector3 tangent1, tangent2, lastNormal;
     
     void Awake()
     {
-        SetupComponents();
-        pathCache = new Vector3[maxCacheSize];
-        circleCache = new Vector3[circleSegments + 1];
+        SetupLineRenderer();
     }
     
-    void SetupComponents()
+    void SetupLineRenderer()
     {
         lineRenderer = GetComponent<LineRenderer>();
         lineRenderer.startWidth = lineWidth;
         lineRenderer.endWidth = lineWidth;
         lineRenderer.useWorldSpace = true;
+        lineRenderer.startColor = drawColor;
+        lineRenderer.endColor = drawColor;
+        lineRenderer.positionCount = 0;
         lineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         lineRenderer.receiveShadows = false;
-        lineRenderer.allowOcclusionWhenDynamic = false;
-        lineRenderer.positionCount = 0;
-        
-        cam = Camera.main;
-        if (!sphereCenter) sphereCenter = transform.parent;
     }
     
     void OnEnable()
@@ -62,46 +43,47 @@ public class CircleVisualizer : MonoBehaviour
         CircleSelector.OnDrawingCancelled -= ClearPath;
     }
     
-    void UpdatePath(List<Vector3> path, Vector3 normal)
+    void UpdatePath(Vector3[] points)
     {
-        if (path == null || path.Count == 0) 
-        { 
-            ClearPath(); 
-            return; 
-        }
+        // PERFORMANCE: Direkt vom Array ohne Kopieren
+        var selector = FindObjectOfType<CircleSelector>();
+        int pointCount = selector.GetPointCount();
         
-        lineRenderer.startColor = drawColor;
-        lineRenderer.endColor = drawColor;
-        
-        int count = Mathf.Min(path.Count, maxCacheSize);
-        
-        // HYBRID: Historical points + current cursor position
-        for (int i = 0; i < count; i++)
+        if (pointCount == 0)
         {
-            if (i == count - 1)
-            {
-                pathCache[i] = GetCursorPosition();
-            }
-            else
-            {
-                pathCache[i] = path[i] + normal * heightOffset;
-            }
+            lineRenderer.positionCount = 0;
+            return;
         }
         
-        lineRenderer.positionCount = count;
-        lineRenderer.SetPositions(pathCache);
-    }
-    
-    // OPTIMIERUNG: Inline cursor projection
-    Vector3 GetCursorPosition()
-    {
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        // FADE SYSTEM: Berechne durchschnittlichen Fade-Faktor
+        float[] fadeFactors = selector.GetPointFadeFactors();
+        float averageFade = 1f;
         
-        if (Physics.Raycast(ray, out RaycastHit hit, 100f)) return hit.point;
+        if (fadeFactors != null && pointCount > 0)
+        {
+            // Durchschnittlicher Fade der letzten 20% der Punkte
+            int fadeCheckCount = Mathf.Max(1, pointCount / 5);
+            float fadeSum = 0f;
+            
+            for (int i = 0; i < fadeCheckCount; i++)
+            {
+                fadeSum += fadeFactors[i];
+            }
+            averageFade = fadeSum / fadeCheckCount;
+        }
         
-        // Z=0 plane fallback
-        float t = -ray.origin.z / ray.direction.z;
-        return ray.origin + ray.direction * t;
+        // SIMPLE FADE: Gesamte Linie mit durchschnittlichem Alpha
+        Color startColor = new Color(drawColor.r, drawColor.g, drawColor.b, drawColor.a * averageFade);
+        Color endColor = new Color(drawColor.r, drawColor.g, drawColor.b, drawColor.a);
+        
+        lineRenderer.startColor = startColor; // Hinten (gefaded)
+        lineRenderer.endColor = endColor;     // Vorne (voll sichtbar)
+        lineRenderer.positionCount = pointCount;
+        
+        // PERFORMANCE: SetPositions mit slice
+        Vector3[] positions = new Vector3[pointCount];
+        System.Array.Copy(points, 0, positions, 0, pointCount);
+        lineRenderer.SetPositions(positions);
     }
     
     void ShowConfirmation(Vector3 center, float radius, Vector3 normal)
@@ -112,38 +94,30 @@ public class CircleVisualizer : MonoBehaviour
     
     System.Collections.IEnumerator ConfirmationEffect(Vector3 center, float radius, Vector3 normal)
     {
-        UpdateTangentBasis(normal);
+        // SIMPLE: Zeichne perfekten Kreis
+        int segments = 32;
+        Vector3[] circlePoints = new Vector3[segments + 1];
         
-        // OPTIMIERUNG: Direct circle calculation
-        float angleStep = Mathf.PI * 2f / circleSegments;
-        for (int i = 0; i <= circleSegments; i++)
+        Vector3 tangent1 = Vector3.Cross(normal, Vector3.up);
+        if (tangent1.sqrMagnitude < 0.01f) tangent1 = Vector3.Cross(normal, Vector3.forward);
+        tangent1.Normalize();
+        
+        Vector3 tangent2 = Vector3.Cross(normal, tangent1);
+        
+        for (int i = 0; i <= segments; i++)
         {
-            float angle = i * angleStep;
-            circleCache[i] = center + 
-                (tangent1 * Mathf.Cos(angle) + tangent2 * Mathf.Sin(angle)) * radius +
-                normal * heightOffset;
+            float angle = (float)i / segments * Mathf.PI * 2f;
+            circlePoints[i] = center + 
+                (tangent1 * Mathf.Cos(angle) + tangent2 * Mathf.Sin(angle)) * radius;
         }
         
         lineRenderer.startColor = confirmColor;
         lineRenderer.endColor = confirmColor;
-        lineRenderer.positionCount = circleSegments + 1;
-        lineRenderer.SetPositions(circleCache);
+        lineRenderer.positionCount = segments + 1;
+        lineRenderer.SetPositions(circlePoints);
         
         yield return new WaitForSeconds(1f);
         ClearPath();
-    }
-    
-    // OPTIMIERUNG: Only recalculate if normal changed
-    void UpdateTangentBasis(Vector3 normal)
-    {
-        if (Vector3.Dot(normal, lastNormal) > 0.999f) return;
-        
-        tangent1 = Vector3.Cross(normal, Vector3.up);
-        if (tangent1.sqrMagnitude < 0.01f) tangent1 = Vector3.Cross(normal, Vector3.forward);
-        tangent1.Normalize();
-        
-        tangent2 = Vector3.Cross(normal, tangent1);
-        lastNormal = normal;
     }
     
     void ClearPath()
@@ -154,10 +128,5 @@ public class CircleVisualizer : MonoBehaviour
             confirmRoutine = null;
         }
         lineRenderer.positionCount = 0;
-    }
-    
-    void OnDestroy()
-    {
-        if (confirmRoutine != null) StopCoroutine(confirmRoutine);
     }
 }

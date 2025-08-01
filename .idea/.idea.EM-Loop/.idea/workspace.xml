@@ -8,6 +8,7 @@
       <change beforePath="$PROJECT_DIR$/.idea/.idea.EM-Loop/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.EM-Loop/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Assets/Scenes/IbiPlayground.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scenes/IbiPlayground.unity" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Assets/Scripts/CircleSelector.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/CircleSelector.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/CircleVisualizer.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/CircleVisualizer.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/UserSettings/Layouts/CurrentMaximizeLayout.dwlt" beforeDir="false" afterPath="$PROJECT_DIR$/UserSettings/Layouts/CurrentMaximizeLayout.dwlt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -36,6 +37,7 @@
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "develp/ibi",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -106,7 +108,8 @@
       <updated>1753958027388</updated>
       <workItem from="1753958067686" duration="22726000" />
       <workItem from="1754046665218" duration="36000" />
-      <workItem from="1754047013800" duration="12814000" />
+      <workItem from="1754047013800" duration="19052000" />
+      <workItem from="1754079529518" duration="1263000" />
     </task>
     <servers />
   </component>
