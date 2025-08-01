@@ -278,6 +278,9 @@ MonoBehaviour:
   priority: 0
   pointValue: 100
   isActive: 1
+  detectionRadius: 1
+  selectionEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!212 &90357229
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -581,6 +584,9 @@ MonoBehaviour:
   priority: 0
   pointValue: 100
   isActive: 1
+  detectionRadius: 1
+  selectionEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!1 &659953096
 GameObject:
   m_ObjectHideFlags: 0
@@ -683,6 +689,9 @@ MonoBehaviour:
   priority: 0
   pointValue: 100
   isActive: 1
+  detectionRadius: 1
+  selectionEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!212 &923361516
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -907,6 +916,9 @@ MonoBehaviour:
   priority: 0
   pointValue: 100
   isActive: 1
+  detectionRadius: 1
+  selectionEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!1 &1154078267
 GameObject:
   m_ObjectHideFlags: 0
@@ -1294,6 +1306,13 @@ MonoBehaviour:
   minRadius: 1
   maxPathPoints: 50
   sphereCenter: {fileID: 1320786663}
+  qualityBonus: 1.5
+  closenessThreshold: 1
+  minRadiusModifier: 0.2
+  baseRadiusQuality: 0.5
+  absoluteMinRadius: 0.5
+  speedBonusMultiplier: 1.5
+  maxSpeedBonusTime: 0.05
 --- !u!1 &1269513367
 GameObject:
   m_ObjectHideFlags: 0
@@ -1608,6 +1627,9 @@ MonoBehaviour:
   priority: 0
   pointValue: 100
   isActive: 1
+  detectionRadius: 1
+  selectionEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!212 &1445689393
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -1832,6 +1854,9 @@ MonoBehaviour:
   priority: 0
   pointValue: 100
   isActive: 1
+  detectionRadius: 1
+  selectionEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!1 &1618289369
 GameObject:
   m_ObjectHideFlags: 0
@@ -1973,6 +1998,9 @@ MonoBehaviour:
   priority: 0
   pointValue: 100
   isActive: 1
+  detectionRadius: 1
+  selectionEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!1 &1653802441
 GameObject:
   m_ObjectHideFlags: 0
@@ -2031,6 +2059,9 @@ MonoBehaviour:
   priority: 0
   pointValue: 100
   isActive: 1
+  detectionRadius: 1
+  selectionEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
 --- !u!212 &1653802444
 SpriteRenderer:
   m_ObjectHideFlags: 0
