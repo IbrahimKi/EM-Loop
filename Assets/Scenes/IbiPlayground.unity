@@ -1582,8 +1582,14 @@ MonoBehaviour:
     m_Bits: 64
   sphereCenter: {fileID: 1320786663}
   maxDrawDistance: 10
-  minPointDistance: 0.1
+  minPointDistance: 0.03
   minCircleRadius: 0.5
+  drawingMode: 0
+  enableInterpolation: 1
+  maxInterpolationDistance: 0.1
+  maxInterpolationPoints: 1
+  useHighFrequencyUpdate: 1
+  targetUpdateRate: 120
   qualityBonusMultiplier: 0.5
   speedBonusMultiplier: 1.5
   maxSpeedBonusTime: 0.05
