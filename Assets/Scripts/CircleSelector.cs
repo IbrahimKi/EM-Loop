@@ -3,73 +3,44 @@ using System.Collections.Generic;
 
 public class CircleSelector : MonoBehaviour
 {
-    [Header("Settings")]
+    [Header("Detection")]
     [SerializeField] private LayerMask sphereLayer = -1;
     [SerializeField] private LayerMask targetLayer = -1;
-    [SerializeField] private float minRadius = 1f;
-    [SerializeField] private int maxPathPoints = 50;
     [SerializeField] private Transform sphereCenter;
     
-    [Header("Quality Bonus")]
-    [SerializeField] private float qualityBonus = 0.5f;
-    [SerializeField] private float closenessThreshold = 0.3f;
-    [SerializeField] private float minRadiusModifier = 0.5f;
-    [SerializeField] private float baseRadiusQuality = 0.6f;
-    [SerializeField] private float absoluteMinRadius = 0.5f;
+    [Header("Drawing Limits")]
+    [SerializeField] private float maxDrawDistance = 10f;
+    [SerializeField] private float minPointDistance = 0.1f;
+    [SerializeField] private float minCircleRadius = 0.5f;
     
-    [Header("Speed Bonus")]
+    [Header("Quality & Speed")]
+    [SerializeField] private float qualityBonusMultiplier = 1.5f;
     [SerializeField] private float speedBonusMultiplier = 2f;
     [SerializeField] private float maxSpeedBonusTime = 1f;
     
-    [Header("Raycast Cache Settings")]
-    [SerializeField] private float cachePixelTolerance = 2f; // Screen-pixel Toleranz
-    [SerializeField] private int maxCacheAge = 2; // Max Frames für Cache-Gültigkeit
-    [SerializeField] private bool enableRaycastDebug = false;
+    [Header("Circle Quality Balancing")]
+    [SerializeField] private float closureThreshold = 0.4f;
+    [SerializeField] private float excellentThreshold = 0.8f;
+    [SerializeField] private float perfectCircleBonus = 2.0f;
     
     private Camera cam;
-    
-    // Array Pooling
-    private Vector3[] spherePathPool;
-    private Vector3[] rayHitsPool;
-    private int pathLength = 0;
-    
-    private Vector3[] pathEventCache;
-    private List<Vector3> pathEventList;
-    
-    private Vector3 tangentNormal;
-    private Vector3 tangentCenter;
     private bool isDrawing;
     private float drawStartTime;
     
-    // OPTIMIERUNG: Raycast Cache System
-    private struct RaycastCache
-    {
-        public Vector2 screenPos;
-        public Vector3 sphereHitPoint;
-        public Vector3 sphereNormal;
-        public Vector3 generalHitPoint;
-        public int frameCount;
-        public bool sphereHitValid;
-        public bool generalHitValid;
-        
-        public bool IsValid(int currentFrame, int maxAge)
-        {
-            return currentFrame - frameCount <= maxAge;
-        }
-        
-        public bool IsScreenPosMatch(Vector2 testPos, float tolerance)
-        {
-            return Vector2.Distance(screenPos, testPos) <= tolerance;
-        }
-    }
+    // OPTIMIERUNG: Single path list with distance tracking
+    private List<Vector3> activePath;
+    private List<float> pathDistances;
+    private float totalPathDistance;
     
-    private RaycastCache lastSphereRaycast;
-    private RaycastCache lastGeneralRaycast;
+    // OPTIMIERUNG: Tangent plane cache
+    private Vector3 tangentNormal;
+    private Vector3 tangentCenter;
     
-    // Performance Stats
-    private int raycastCacheHits = 0;
-    private int raycastCacheMisses = 0;
-    private int totalRaycastQueries = 0;
+    // OPTIMIERUNG: Raycast cache
+    private Vector2 lastMousePos;
+    private Vector3 lastSphereHit;
+    private Vector3 lastSphereNormal;
+    private int lastRaycastFrame;
     
     // Events
     public static event System.Action<Vector3, float, Vector3> OnCircleConfirmed;
@@ -80,319 +51,411 @@ public class CircleSelector : MonoBehaviour
     void Awake()
     {
         cam = Camera.main;
-        if (sphereCenter == null)
-            sphereCenter = transform.parent;
+        if (!sphereCenter) sphereCenter = transform.parent;
         
-        InitializePools();
-    }
-    
-    void InitializePools()
-    {
-        spherePathPool = new Vector3[maxPathPoints];
-        rayHitsPool = new Vector3[maxPathPoints];
-        pathEventCache = new Vector3[maxPathPoints];
-        pathEventList = new List<Vector3>(maxPathPoints);
+        activePath = new List<Vector3>(Mathf.RoundToInt(maxDrawDistance / minPointDistance));
+        pathDistances = new List<float>(activePath.Capacity);
     }
     
     void Update()
     {
-        HandleInput();
-    }
-    
-    void HandleInput()
-    {
-        if (Input.GetMouseButtonDown(0))
-            StartDrawing();
-        else if (Input.GetMouseButton(0) && isDrawing)
-            UpdatePath();
-        else if (Input.GetMouseButtonUp(0) && isDrawing)
-            FinishDrawing();
+        if (Input.GetMouseButtonDown(0)) StartDrawing();
+        else if (Input.GetMouseButton(0) && isDrawing) UpdateDrawing();
+        else if (Input.GetMouseButtonUp(0) && isDrawing) FinishDrawing();
     }
     
     void StartDrawing()
     {
-        Vector3 spherePos = GetSpherePositionCached(out Vector3 normal);
-        if (spherePos == Vector3.zero) return;
+        if (!GetSphereHit(out Vector3 hitPoint, out Vector3 normal)) return;
         
         isDrawing = true;
         drawStartTime = Time.time;
         tangentNormal = normal;
-        tangentCenter = spherePos;
+        tangentCenter = hitPoint;
+        totalPathDistance = 0f;
         
-        pathLength = 0;
+        activePath.Clear();
+        pathDistances.Clear();
         
-        spherePathPool[0] = ProjectToTangentPlane(spherePos, spherePos);
-        rayHitsPool[0] = GetRaycastHitCached();
-        pathLength = 1;
+        activePath.Add(ProjectToTangentPlane(hitPoint));
+        pathDistances.Add(0f);
+        
+        OnPathUpdated?.Invoke(activePath, tangentNormal);
     }
     
-    void UpdatePath()
+    void UpdateDrawing()
     {
-        Vector3 spherePos = GetSpherePositionCached(out Vector3 normal);
-        if (spherePos == Vector3.zero) return;
+        if (!GetSphereHit(out Vector3 hitPoint, out Vector3 normal)) return;
         
-        Vector3 projectedPos = ProjectToTangentPlane(spherePos, tangentCenter);
-        Vector3 rayHit = GetRaycastHitCached();
+        Vector3 projectedPoint = ProjectToTangentPlane(hitPoint);
         
-        if (pathLength < maxPathPoints)
+        // OPTIMIERUNG: Distance check before adding
+        if (activePath.Count > 0)
         {
-            spherePathPool[pathLength] = projectedPos;
-            rayHitsPool[pathLength] = rayHit;
-            pathLength++;
+            float segmentDistance = Vector3.Distance(projectedPoint, activePath[activePath.Count - 1]);
+            if (segmentDistance < minPointDistance) return;
+            
+            totalPathDistance += segmentDistance;
+            
+            // OPTIMIERUNG: Remove tail points if over limit
+            while (totalPathDistance > maxDrawDistance && activePath.Count > 1)
+            {
+                RemoveOldestPoint();
+            }
+            
+            activePath.Add(projectedPoint);
+            pathDistances.Add(totalPathDistance);
         }
         
-        TriggerPathUpdatedEvent();
-    }
-    
-    void TriggerPathUpdatedEvent()
-    {
-        pathEventList.Clear();
-        for (int i = 0; i < pathLength; i++)
-        {
-            pathEventList.Add(spherePathPool[i]);
-        }
-        
-        OnPathUpdated?.Invoke(pathEventList, tangentNormal);
+        OnPathUpdated?.Invoke(activePath, tangentNormal);
     }
     
     void FinishDrawing()
     {
-        if (pathLength < 3)
+        if (activePath.Count < 3)
         {
             CancelDrawing();
             return;
         }
         
-        Vector3 spherePathCenter = CalculateCenter(spherePathPool, pathLength);
-        float baseRadius = CalculateRadius(spherePathCenter, spherePathPool, pathLength);
-        float quality = CalculateDrawingQuality();
-        float radiusMultiplier = CalculateRadiusMultiplier(quality);
-        float finalRadius = Mathf.Max(baseRadius * radiusMultiplier, absoluteMinRadius);
+        // NEUE BERECHNUNG: Kreis am Cursor-Ende basierend auf umschlossener Fläche
+        Vector3 cursorCenter = GetCursorWorldPosition();
+        float enclosedRadius = CalculateEnclosedRadius(cursorCenter);
+        float quality = CalculateDrawQuality();
+        float finalRadius = Mathf.Max(enclosedRadius * (1f + quality * qualityBonusMultiplier), minCircleRadius);
         
         float drawTime = Time.time - drawStartTime;
-        float speedBonus = CalculateSpeedBonus(drawTime);
+        float speedBonus = Mathf.Clamp01(maxSpeedBonusTime / drawTime) * speedBonusMultiplier;
         
-        Vector3 rayCenter = CalculateCenter(rayHitsPool, pathLength);
-        float rayRadius = Mathf.Max(CalculateRadius(rayCenter, rayHitsPool, pathLength) * radiusMultiplier, absoluteMinRadius);
+        OnCircleConfirmed?.Invoke(cursorCenter, finalRadius, tangentNormal);
+        ProcessTargetsInRadius(cursorCenter, finalRadius, speedBonus);
         
-        if (finalRadius >= absoluteMinRadius)
+        ResetDrawing();
+    }
+    
+    // NEUE METHODE: Berechnet Radius basierend auf umschlossener Fläche
+    float CalculateEnclosedRadius(Vector3 center)
+    {
+        if (activePath.Count < 3) return minCircleRadius;
+        
+        // Prüfe erst ob es wirklich eine geschlossene Form ist
+        float closureQuality = CalculateClosureQuality(center);
+        
+        // QUALITY TIERS:
+        if (closureQuality < closureThreshold) 
+            return minCircleRadius; // Schlechte Formen = sehr klein
+        
+        // Berechne Basis-Radius
+        float avgDistance = CalculateAverageDistance(center);
+        float densityFactor = CalculatePathDensity(center, avgDistance);
+        float baseRadius = avgDistance * densityFactor * closureQuality;
+        
+        // QUALITY MULTIPLIERS:
+        if (closureQuality >= excellentThreshold)
         {
-            OnCircleConfirmed?.Invoke(spherePathCenter, finalRadius, tangentNormal);
-            ProcessTargetsFromRaycast(rayCenter, rayRadius, speedBonus);
+            // Excellent circles get bigger than drawn
+            return baseRadius * (1f + perfectCircleBonus * (closureQuality - excellentThreshold) / (1f - excellentThreshold));
+        }
+        else if (closureQuality >= 0.6f)
+        {
+            // Good circles get small bonus
+            return baseRadius * (1f + qualityBonusMultiplier * 0.3f);
+        }
+        else
+        {
+            // Medium circles stay normal size
+            return baseRadius;
+        }
+    }
+    
+    // HELPER: Berechnet durchschnittliche Distanz zum Center
+    float CalculateAverageDistance(Vector3 center)
+    {
+        float totalDistance = 0f;
+        int validPoints = 0;
+        
+        for (int i = 0; i < activePath.Count; i++)
+        {
+            float distance = Vector3.Distance(activePath[i], center);
+            
+            if (distance <= maxDrawDistance * 0.8f)
+            {
+                totalDistance += distance;
+                validPoints++;
+            }
         }
         
-        isDrawing = false;
-        pathLength = 0;
+        return validPoints > 0 ? totalDistance / validPoints : minCircleRadius;
+    }
+    
+    // NEUE METHODE: Prüft ob der Pfad wirklich geschlossen/kreisförmig ist
+    float CalculateClosureQuality(Vector3 center)
+    {
+        if (activePath.Count < 4) return 0f;
+        
+        // 1. Start-End Nähe prüfen
+        float startEndDistance = Vector3.Distance(activePath[0], activePath[activePath.Count - 1]);
+        float avgDistanceToCenter = 0f;
+        
+        for (int i = 0; i < activePath.Count; i++)
+        {
+            avgDistanceToCenter += Vector3.Distance(activePath[i], center);
+        }
+        avgDistanceToCenter /= activePath.Count;
+        
+        // Start-End sollten nah beieinander sein für echten Kreis
+        float closureScore = Mathf.Clamp01(1f - (startEndDistance / (avgDistanceToCenter * 0.6f)));
+        
+        // 2. Winkelabdeckung prüfen - echter Kreis sollte ~360° abdecken
+        float angleSpread = CalculateAngleSpread(center);
+        float angleScore = Mathf.Clamp01(angleSpread / 300f); // 300° als "gut genug"
+        
+        // 3. Richtungsänderungen prüfen - Bögen haben wenig Richtungsänderung
+        float directionChangeScore = CalculateDirectionChanges();
+        
+        // Kombiniere alle Faktoren
+        return (closureScore * 0.4f + angleScore * 0.4f + directionChangeScore * 0.2f);
+    }
+    
+    // NEUE METHODE: Berechnet Winkelabdeckung um Center
+    float CalculateAngleSpread(Vector3 center)
+    {
+        if (activePath.Count < 4) return 0f;
+        
+        Vector3 referenceDir = (activePath[0] - center).normalized;
+        float minAngle = 0f;
+        float maxAngle = 0f;
+        
+        for (int i = 1; i < activePath.Count; i++)
+        {
+            Vector3 currentDir = (activePath[i] - center).normalized;
+            float angle = Vector3.SignedAngle(referenceDir, currentDir, tangentNormal);
+            
+            if (angle < minAngle) minAngle = angle;
+            if (angle > maxAngle) maxAngle = angle;
+        }
+        
+        return maxAngle - minAngle;
+    }
+    
+    // NEUE METHODE: Zählt signifikante Richtungsänderungen
+    float CalculateDirectionChanges()
+    {
+        if (activePath.Count < 4) return 0f;
+        
+        int significantChanges = 0;
+        float totalAngleChange = 0f;
+        
+        for (int i = 2; i < activePath.Count; i++)
+        {
+            Vector3 dir1 = (activePath[i-1] - activePath[i-2]).normalized;
+            Vector3 dir2 = (activePath[i] - activePath[i-1]).normalized;
+            
+            if (dir1.sqrMagnitude > 0.01f && dir2.sqrMagnitude > 0.01f)
+            {
+                float angle = Vector3.Angle(dir1, dir2);
+                totalAngleChange += angle;
+                
+                if (angle > 30f) // Signifikante Richtungsänderung
+                {
+                    significantChanges++;
+                }
+            }
+        }
+        
+        // Echter Kreis sollte viele kleine Richtungsänderungen haben
+        float expectedChanges = activePath.Count * 0.7f;
+        float changeRatio = Mathf.Clamp01(significantChanges / expectedChanges);
+        
+        // Auch Gesamtwinkeländerung berücksichtigen (sollte ~360° sein)
+        float totalAngleScore = Mathf.Clamp01(totalAngleChange / 300f);
+        
+        return (changeRatio + totalAngleScore) * 0.5f;
+    }
+    
+    // NEUE METHODE: Berechnet Pfad-Dichte um Center
+    float CalculatePathDensity(Vector3 center, float avgDistance)
+    {
+        if (activePath.Count < 4) return 0.8f;
+        
+        float radiusVariance = 0f;
+        int validPoints = 0;
+        
+        // Berechne Varianz der Distanzen zum Center
+        for (int i = 0; i < activePath.Count; i++)
+        {
+            float distance = Vector3.Distance(activePath[i], center);
+            if (distance <= maxDrawDistance * 0.8f)
+            {
+                float diff = distance - avgDistance;
+                radiusVariance += diff * diff;
+                validPoints++;
+            }
+        }
+        
+        if (validPoints <= 1) return 0.8f;
+        
+        radiusVariance = Mathf.Sqrt(radiusVariance / validPoints);
+        
+        // Niedrige Varianz = hohe Dichte = größerer effektiver Radius
+        // Hohe Varianz = niedrige Dichte = kleinerer effektiver Radius
+        float normalizedVariance = Mathf.Clamp01(radiusVariance / avgDistance);
+        float densityFactor = Mathf.Lerp(1.2f, 0.6f, normalizedVariance);
+        
+        return densityFactor;
+    }
+    
+    // NEUE METHODE: Aktuelle Cursor-Position in Weltkoordinaten
+    Vector3 GetCursorWorldPosition()
+    {
+        if (GetSphereHit(out Vector3 hitPoint, out Vector3 normal))
+        {
+            return ProjectToTangentPlane(hitPoint);
+        }
+        
+        // Fallback: Letzter Pfadpunkt
+        return activePath.Count > 0 ? activePath[activePath.Count - 1] : tangentCenter;
     }
     
     void CancelDrawing()
     {
-        isDrawing = false;
-        pathLength = 0;
         OnDrawingCancelled?.Invoke();
+        ResetDrawing();
     }
     
-    // OPTIMIERUNG: Cached Sphere Raycast
-    Vector3 GetSpherePositionCached(out Vector3 normal)
+    void ResetDrawing()
     {
-        Vector2 mousePos = Input.mousePosition;
-        int currentFrame = Time.frameCount;
-        totalRaycastQueries++;
+        isDrawing = false;
+        activePath.Clear();
+        pathDistances.Clear();
+        totalPathDistance = 0f;
+    }
+    
+    // OPTIMIERUNG: Remove oldest point and update distances
+    void RemoveOldestPoint()
+    {
+        if (activePath.Count <= 1) return;
         
-        // Cache-Hit Check
-        if (lastSphereRaycast.IsValid(currentFrame, maxCacheAge) && 
-            lastSphereRaycast.IsScreenPosMatch(mousePos, cachePixelTolerance))
+        float removedDistance = pathDistances[1]; // Distance to second point
+        activePath.RemoveAt(0);
+        pathDistances.RemoveAt(0);
+        
+        // Shift all distances
+        for (int i = 0; i < pathDistances.Count; i++)
         {
-            raycastCacheHits++;
-            normal = lastSphereRaycast.sphereNormal;
-            
-            if (enableRaycastDebug)
-            {
-                Debug.Log($"Sphere raycast cache HIT - Frame: {currentFrame}");
-            }
-            
-            return lastSphereRaycast.sphereHitValid ? lastSphereRaycast.sphereHitPoint : Vector3.zero;
+            pathDistances[i] -= removedDistance;
         }
         
-        // Cache Miss - Neuer Raycast
-        raycastCacheMisses++;
-        Ray ray = cam.ScreenPointToRay(mousePos);
+        totalPathDistance -= removedDistance;
+    }
+    
+    // OPTIMIERUNG: Cached sphere raycast
+    bool GetSphereHit(out Vector3 hitPoint, out Vector3 normal)
+    {
+        Vector2 mousePos = Input.mousePosition;
         
+        // Cache hit if mouse barely moved
+        if (Time.frameCount - lastRaycastFrame <= 2 && 
+            Vector2.Distance(mousePos, lastMousePos) < 2f)
+        {
+            hitPoint = lastSphereHit;
+            normal = lastSphereNormal;
+            return lastSphereHit != Vector3.zero;
+        }
+        
+        Ray ray = cam.ScreenPointToRay(mousePos);
         if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, sphereLayer))
         {
-            // Cache Update
-            lastSphereRaycast = new RaycastCache
-            {
-                screenPos = mousePos,
-                sphereHitPoint = hit.point,
-                sphereNormal = hit.normal,
-                frameCount = currentFrame,
-                sphereHitValid = true
-            };
+            lastMousePos = mousePos;
+            lastSphereHit = hit.point;
+            lastSphereNormal = hit.normal;
+            lastRaycastFrame = Time.frameCount;
             
+            hitPoint = hit.point;
             normal = hit.normal;
-            
-            if (enableRaycastDebug)
-            {
-                Debug.Log($"Sphere raycast cache MISS - New hit at {hit.point}");
-            }
-            
-            return hit.point;
+            return true;
         }
         
-        // Kein Hit - Cache mit Invalid-Flag
-        lastSphereRaycast = new RaycastCache
-        {
-            screenPos = mousePos,
-            frameCount = currentFrame,
-            sphereHitValid = false
-        };
-        
+        lastSphereHit = Vector3.zero;
+        hitPoint = Vector3.zero;
         normal = Vector3.up;
-        return Vector3.zero;
+        return false;
     }
     
-    // OPTIMIERUNG: Cached General Raycast
-    Vector3 GetRaycastHitCached()
+    Vector3 ProjectToTangentPlane(Vector3 worldPos)
     {
-        Vector2 mousePos = Input.mousePosition;
-        int currentFrame = Time.frameCount;
-        
-        // Cache-Hit Check
-        if (lastGeneralRaycast.IsValid(currentFrame, maxCacheAge) && 
-            lastGeneralRaycast.IsScreenPosMatch(mousePos, cachePixelTolerance))
-        {
-            if (enableRaycastDebug)
-            {
-                Debug.Log($"General raycast cache HIT - Frame: {currentFrame}");
-            }
-            
-            return lastGeneralRaycast.generalHitValid ? lastGeneralRaycast.generalHitPoint : Vector3.zero;
-        }
-        
-        // Cache Miss - Neuer Raycast
-        Ray ray = cam.ScreenPointToRay(mousePos);
-        int layerMask = ~sphereLayer;
-        
-        if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, layerMask))
-        {
-            // Cache Update
-            lastGeneralRaycast = new RaycastCache
-            {
-                screenPos = mousePos,
-                generalHitPoint = hit.point,
-                frameCount = currentFrame,
-                generalHitValid = true
-            };
-            
-            if (enableRaycastDebug)
-            {
-                Debug.Log($"General raycast cache MISS - New hit at {hit.point}");
-            }
-            
-            return hit.point;
-        }
-        
-        // Fallback: Projektion auf Z=0 Ebene
-        Plane plane = new Plane(Vector3.forward, Vector3.zero);
-        if (plane.Raycast(ray, out float distance))
-        {
-            Vector3 fallbackPoint = ray.GetPoint(distance);
-            
-            lastGeneralRaycast = new RaycastCache
-            {
-                screenPos = mousePos,
-                generalHitPoint = fallbackPoint,
-                frameCount = currentFrame,
-                generalHitValid = true
-            };
-            
-            return fallbackPoint;
-        }
-        
-        // Total Fallback
-        lastGeneralRaycast = new RaycastCache
-        {
-            screenPos = mousePos,
-            frameCount = currentFrame,
-            generalHitValid = false
-        };
-        
-        return Vector3.zero;
-    }
-    
-    Vector3 ProjectToTangentPlane(Vector3 worldPos, Vector3 planeCenter)
-    {
-        Vector3 toPos = worldPos - planeCenter;
+        Vector3 toPos = worldPos - tangentCenter;
         Vector3 projected = toPos - Vector3.Dot(toPos, tangentNormal) * tangentNormal;
-        return planeCenter + projected;
+        return tangentCenter + projected;
     }
     
-    Vector3 CalculateCenter(Vector3[] points, int length)
+    Vector3 CalculatePathCenter()
     {
         Vector3 sum = Vector3.zero;
-        for (int i = 0; i < length; i++)
-            sum += points[i];
-        return sum / length;
+        for (int i = 0; i < activePath.Count; i++)
+            sum += activePath[i];
+        return sum / activePath.Count;
     }
     
-    float CalculateRadius(Vector3 center, Vector3[] points, int length)
+    float CalculatePathRadius(Vector3 center)
     {
         float maxDist = 0f;
-        for (int i = 0; i < length; i++)
+        for (int i = 0; i < activePath.Count; i++)
         {
-            float dist = Vector3.Distance(points[i], center);
+            float dist = Vector3.Distance(activePath[i], center);
             if (dist > maxDist) maxDist = dist;
         }
         return maxDist;
     }
     
-    float CalculateDrawingQuality()
+    float CalculateDrawQuality()
     {
-        if (pathLength < 4) return 0f;
+        if (activePath.Count < 4) return 0f;
         
-        Vector3 center = CalculateCenter(spherePathPool, pathLength);
+        Vector3 center = CalculatePathCenter();
         float avgRadius = 0f;
         
-        for (int i = 0; i < pathLength; i++)
+        // Calculate average radius
+        for (int i = 0; i < activePath.Count; i++)
         {
-            avgRadius += Vector3.Distance(spherePathPool[i], center);
+            avgRadius += Vector3.Distance(activePath[i], center);
         }
-        avgRadius /= pathLength;
+        avgRadius /= activePath.Count;
         
+        // Calculate circularity (radius variance)
         float radiusVariance = 0f;
-        for (int i = 0; i < pathLength; i++)
+        for (int i = 0; i < activePath.Count; i++)
         {
-            float diff = Vector3.Distance(spherePathPool[i], center) - avgRadius;
+            float diff = Vector3.Distance(activePath[i], center) - avgRadius;
             radiusVariance += diff * diff;
         }
-        radiusVariance = Mathf.Sqrt(radiusVariance / pathLength);
+        radiusVariance = Mathf.Sqrt(radiusVariance / activePath.Count);
         
-        float closeness = Vector3.Distance(spherePathPool[0], spherePathPool[pathLength - 1]);
+        // Calculate closeness (start/end proximity)
+        float closeness = Vector3.Distance(activePath[0], activePath[activePath.Count - 1]);
         float maxExpectedDistance = avgRadius * 0.5f;
         float closenessFactor = Mathf.Clamp01(1f - closeness / maxExpectedDistance);
         
-        float expectedVariance = avgRadius * 0.1f;
-        float circularityScore = Mathf.Clamp01(1f - radiusVariance / expectedVariance);
+        // Calculate smoothness
+        float smoothnessFactor = CalculatePathSmoothness(avgRadius);
         
-        float smoothnessFactor = CalculatePathSmoothness();
-        
-        return (circularityScore * 0.4f + closenessFactor * 0.4f + smoothnessFactor * 0.2f);
+        return (closenessFactor * 0.5f + smoothnessFactor * 0.3f + 
+                Mathf.Clamp01(1f - radiusVariance / (avgRadius * 0.1f)) * 0.2f);
     }
     
-    float CalculatePathSmoothness()
+    float CalculatePathSmoothness(float avgRadius)
     {
-        if (pathLength < 4) return 1f;
+        if (activePath.Count < 4) return 1f;
         
         float totalAngleChange = 0f;
         int validSegments = 0;
         
-        for (int i = 2; i < pathLength; i++)
+        for (int i = 2; i < activePath.Count; i++)
         {
-            Vector3 dir1 = (spherePathPool[i-1] - spherePathPool[i-2]).normalized;
-            Vector3 dir2 = (spherePathPool[i] - spherePathPool[i-1]).normalized;
+            Vector3 dir1 = (activePath[i-1] - activePath[i-2]).normalized;
+            Vector3 dir2 = (activePath[i] - activePath[i-1]).normalized;
             
-            if (dir1.magnitude > 0.1f && dir2.magnitude > 0.1f)
+            if (dir1.sqrMagnitude > 0.01f && dir2.sqrMagnitude > 0.01f)
             {
                 float angle = Vector3.Angle(dir1, dir2);
                 totalAngleChange += angle;
@@ -403,105 +466,40 @@ public class CircleSelector : MonoBehaviour
         if (validSegments == 0) return 1f;
         
         float avgAngleChange = totalAngleChange / validSegments;
-        float expectedAngleChange = 360f / pathLength;
+        float expectedAngleChange = 360f / activePath.Count;
         
         return Mathf.Clamp01(1f - Mathf.Abs(avgAngleChange - expectedAngleChange) / 90f);
     }
     
-    float CalculateRadiusMultiplier(float quality)
+    void ProcessTargetsInRadius(Vector3 center, float radius, float speedBonus)
     {
-        if (quality <= baseRadiusQuality)
-        {
-            return minRadiusModifier + (1f - minRadiusModifier) * (quality / baseRadiusQuality);
-        }
-        else
-        {
-            float overQuality = (quality - baseRadiusQuality) / (1f - baseRadiusQuality);
-            return 1f + qualityBonus * overQuality;
-        }
-    }
-    
-    void ProcessTargetsFromRaycast(Vector3 rayCenter, float rayRadius, float speedBonus)
-    {
-        Collider[] colliders = Physics.OverlapSphere(rayCenter, rayRadius, targetLayer);
-        
-        if (colliders.Length == 0)
-        {
-            Debug.Log($"No targets in raycast circle - Center: {rayCenter}");
-            return;
-        }
+        Collider[] targets = Physics.OverlapSphere(center, radius, targetLayer);
+        if (targets.Length == 0) return;
         
         CircleTarget bestTarget = null;
-        float closestDist = float.MaxValue;
+        float closestDistance = float.MaxValue;
         int highestPriority = int.MinValue;
         
-        foreach (var col in colliders)
+        for (int i = 0; i < targets.Length; i++)
         {
-            var target = col.GetComponent<CircleTarget>();
-            if (!target || !target.IsActive) continue;
+            var target = targets[i].GetComponent<CircleTarget>();
+            if (!target?.IsActive == true) continue;
             
-            float dist = Vector3.Distance(rayCenter, col.transform.position);
+            float distance = Vector3.Distance(center, targets[i].transform.position);
             
             if (target.Priority > highestPriority || 
-                (target.Priority == highestPriority && dist < closestDist))
+                (target.Priority == highestPriority && distance < closestDistance))
             {
                 highestPriority = target.Priority;
-                closestDist = dist;
+                closestDistance = distance;
                 bestTarget = target;
             }
         }
         
         if (bestTarget)
         {
-            OnTargetSelected?.Invoke(bestTarget, rayCenter, speedBonus);
-            bestTarget.SelectTarget(rayCenter, speedBonus);
+            OnTargetSelected?.Invoke(bestTarget, center, speedBonus);
+            bestTarget.SelectTarget(center, speedBonus);
         }
-    }
-    
-    float CalculateSpeedBonus(float drawTime)
-    {
-        float speedFactor = Mathf.Clamp01(maxSpeedBonusTime / drawTime);
-        return speedBonusMultiplier * speedFactor;
-    }
-    
-    // OPTIMIERUNG: Cache-Statistiken und Management
-    [ContextMenu("Clear Raycast Cache")]
-    public void ClearRaycastCache()
-    {
-        lastSphereRaycast = default;
-        lastGeneralRaycast = default;
-        Debug.Log("Raycast cache cleared");
-    }
-    
-    [ContextMenu("Print Cache Stats")]
-    public void PrintCacheStats()
-    {
-        float hitRatio = totalRaycastQueries > 0 ? (float)raycastCacheHits / totalRaycastQueries * 100f : 0f;
-        Debug.Log($"Raycast Cache Stats - Hits: {raycastCacheHits}, Misses: {raycastCacheMisses}, Hit Ratio: {hitRatio:F1}%");
-    }
-    
-    // Debug GUI
-    void OnGUI()
-    {
-        if (!enableRaycastDebug) return;
-        
-        GUI.color = Color.yellow;
-        GUILayout.BeginArea(new Rect(10, 120, 300, 120));
-        GUILayout.Label("Raycast Cache Debug:");
-        GUILayout.Label($"Cache Hits: {raycastCacheHits}");
-        GUILayout.Label($"Cache Misses: {raycastCacheMisses}");
-        GUILayout.Label($"Total Queries: {totalRaycastQueries}");
-        
-        if (totalRaycastQueries > 0)
-        {
-            float hitRatio = (float)raycastCacheHits / totalRaycastQueries * 100f;
-            GUILayout.Label($"Hit Ratio: {hitRatio:F1}%");
-        }
-        
-        if (GUILayout.Button("Clear Cache"))
-        {
-            ClearRaycastCache();
-        }
-        GUILayout.EndArea();
     }
 }

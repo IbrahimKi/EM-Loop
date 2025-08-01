@@ -1451,16 +1451,10 @@ MonoBehaviour:
   lineWidth: 0.1
   drawColor: {r: 1, g: 0.5757947, b: 0.043396115, a: 1}
   confirmColor: {r: 0, g: 1, b: 0.98139834, a: 0.8392157}
+  heightOffset: 0.1
   sphereCenter: {fileID: 0}
-  drawMode: 0
-  worldSpaceHeight: 0
-  raycastDistance: 100
-  drawingSurface:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  maxPathPoints: 50
+  maxCacheSize: 100
   circleSegments: 32
-  enableDebug: 0
 --- !u!120 &1232657216
 LineRenderer:
   serializedVersion: 2
@@ -1586,19 +1580,16 @@ MonoBehaviour:
   targetLayer:
     serializedVersion: 2
     m_Bits: 64
-  minRadius: 1
-  maxPathPoints: 50
   sphereCenter: {fileID: 1320786663}
-  qualityBonus: 1.5
-  closenessThreshold: 3
-  minRadiusModifier: 0.2
-  baseRadiusQuality: 0.5
-  absoluteMinRadius: 0.5
+  maxDrawDistance: 10
+  minPointDistance: 0.1
+  minCircleRadius: 0.5
+  qualityBonusMultiplier: 0.5
   speedBonusMultiplier: 1.5
   maxSpeedBonusTime: 0.05
-  cachePixelTolerance: 2
-  maxCacheAge: 2
-  enableRaycastDebug: 0
+  closureThreshold: 0.4
+  excellentThreshold: 0.5
+  perfectCircleBonus: 2
 --- !u!1 &1269513367
 GameObject:
   m_ObjectHideFlags: 0
