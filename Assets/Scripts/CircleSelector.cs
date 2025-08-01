@@ -198,7 +198,6 @@ public class CircleSelector : MonoBehaviour
         
         Vector3 center = CalculateCenter(spherePath);
         float avgRadius = 0f;
-        float radiusVariance = 0f;
         
         // Durchschnittsradius berechnen
         foreach (Vector3 point in spherePath)
@@ -207,22 +206,57 @@ public class CircleSelector : MonoBehaviour
         }
         avgRadius /= spherePath.Count;
         
-        // Radiusvarianz für Kreisqualität
+        // Radiusvarianz für Kreisqualität (normalisiert)
+        float radiusVariance = 0f;
         foreach (Vector3 point in spherePath)
         {
             float diff = Vector3.Distance(point, center) - avgRadius;
             radiusVariance += diff * diff;
         }
-        radiusVariance /= spherePath.Count;
+        radiusVariance = Mathf.Sqrt(radiusVariance / spherePath.Count);
         
-        // Geschlossenheit prüfen
+        // Geschlossenheit (graduell statt threshold)
         float closeness = Vector3.Distance(spherePath[0], spherePath[spherePath.Count - 1]);
-        float closenessFactor = Mathf.Clamp01(1f - closeness / closenessThreshold);
+        float maxExpectedDistance = avgRadius * 0.5f; // Erwartet: halber Radius max
+        float closenessFactor = Mathf.Clamp01(1f - closeness / maxExpectedDistance);
         
-        // Quality Score: niedrige Varianz + gute Geschlossenheit = hohe Qualität
-        float circularityScore = Mathf.Clamp01(1f - radiusVariance / (avgRadius * 0.1f));
+        // Kreisförmigkeit (graduell, basiert auf relativer Varianz)
+        float expectedVariance = avgRadius * 0.1f; // 10% Varianz = akzeptabel
+        float circularityScore = Mathf.Clamp01(1f - radiusVariance / expectedVariance);
         
-        return (circularityScore + closenessFactor) * 0.5f;
+        // Pfadglätte (weniger abrupte Richtungsänderungen = besser)
+        float smoothnessFactor = CalculatePathSmoothness();
+        
+        // Gewichtete Kombination
+        return (circularityScore * 0.4f + closenessFactor * 0.4f + smoothnessFactor * 0.2f);
+    }
+    
+    float CalculatePathSmoothness()
+    {
+        if (spherePath.Count < 4) return 1f;
+        
+        float totalAngleChange = 0f;
+        int validSegments = 0;
+        
+        for (int i = 2; i < spherePath.Count; i++)
+        {
+            Vector3 dir1 = (spherePath[i-1] - spherePath[i-2]).normalized;
+            Vector3 dir2 = (spherePath[i] - spherePath[i-1]).normalized;
+            
+            if (dir1.magnitude > 0.1f && dir2.magnitude > 0.1f)
+            {
+                float angle = Vector3.Angle(dir1, dir2);
+                totalAngleChange += angle;
+                validSegments++;
+            }
+        }
+        
+        if (validSegments == 0) return 1f;
+        
+        float avgAngleChange = totalAngleChange / validSegments;
+        float expectedAngleChange = 360f / spherePath.Count; // Perfekter Kreis
+        
+        return Mathf.Clamp01(1f - Mathf.Abs(avgAngleChange - expectedAngleChange) / 90f);
     }
     
     float CalculateRadiusMultiplier(float quality)

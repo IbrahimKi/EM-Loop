@@ -1307,7 +1307,7 @@ MonoBehaviour:
   maxPathPoints: 50
   sphereCenter: {fileID: 1320786663}
   qualityBonus: 1.5
-  closenessThreshold: 1
+  closenessThreshold: 3
   minRadiusModifier: 0.2
   baseRadiusQuality: 0.5
   absoluteMinRadius: 0.5
