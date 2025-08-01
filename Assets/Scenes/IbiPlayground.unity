@@ -522,7 +522,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 46d8ab20f3fb14f4e8f758fda6c66468, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pathColor: {r: 0.8415094, g: 0.62090313, b: 0, a: 0.80784315}
+  pathColor: {r: 1, g: 0.6078849, b: 0, a: 0.80784315}
   lineWidth: 0.15
   heightOffset: 0.1
   curveAltitude: 1.5
@@ -1451,8 +1451,13 @@ MonoBehaviour:
   lineWidth: 0.1
   drawColor: {r: 1, g: 0.5757947, b: 0.043396115, a: 1}
   confirmColor: {r: 0, g: 1, b: 0.98139834, a: 0.8392157}
-  heightOffset: 1
   sphereCenter: {fileID: 0}
+  drawMode: 0
+  worldSpaceHeight: 0
+  raycastDistance: 100
+  drawingSurface:
+    serializedVersion: 2
+    m_Bits: 4294967295
   maxPathPoints: 50
   circleSegments: 32
   enableDebug: 0
@@ -1525,22 +1530,22 @@ LineRenderer:
     colorGradient:
       serializedVersion: 2
       key0: {r: 1, g: 0.60530174, b: 0, a: 1}
-      key1: {r: 0, g: 1, b: 0.98039216, a: 1}
-      key2: {r: 0, g: 0, b: 0, a: 0}
+      key1: {r: 0.018007278, g: 0.99289256, b: 0.962738, a: 0.69803923}
+      key2: {r: 0, g: 1, b: 0.98039216, a: 0}
       key3: {r: 0, g: 0, b: 0, a: 0}
       key4: {r: 0, g: 0, b: 0, a: 0}
       key5: {r: 0, g: 0, b: 0, a: 0}
       key6: {r: 0, g: 0, b: 0, a: 0}
       key7: {r: 0, g: 0, b: 0, a: 0}
-      ctime0: 21627
-      ctime1: 43253
-      ctime2: 0
+      ctime0: 0
+      ctime1: 24132
+      ctime2: 65535
       ctime3: 0
       ctime4: 0
       ctime5: 0
       ctime6: 0
       ctime7: 0
-      atime0: 0
+      atime0: 3007
       atime1: 65535
       atime2: 0
       atime3: 0
@@ -1550,7 +1555,7 @@ LineRenderer:
       atime7: 0
       m_Mode: 0
       m_ColorSpace: 0
-      m_NumColorKeys: 2
+      m_NumColorKeys: 3
       m_NumAlphaKeys: 2
     numCornerVertices: 0
     numCapVertices: 0

@@ -8,27 +8,39 @@ public class CircleVisualizer : MonoBehaviour
     [SerializeField] private float lineWidth = 0.1f;
     [SerializeField] private Color drawColor = Color.yellow;
     [SerializeField] private Color confirmColor = Color.green;
-    [SerializeField] private float heightOffset = 0.1f;
     [SerializeField] private Transform sphereCenter;
+    
+    [Header("Drawing Mode")]
+    [SerializeField] private DrawMode drawMode = DrawMode.WorldSpace;
+    [SerializeField] private float worldSpaceHeight = 0.1f;
+    [SerializeField] private float raycastDistance = 100f;
+    [SerializeField] private LayerMask drawingSurface = -1;
     
     [Header("Performance Settings")]
     [SerializeField] private int maxPathPoints = 50;
     [SerializeField] private int circleSegments = 32;
     [SerializeField] private bool enableDebug = false;
     
+    public enum DrawMode
+    {
+        WorldSpace,      // Mit heightOffset
+        CursorProjection // Genau auf Cursor-Position projiziert
+    }
+    
     private LineRenderer lineRenderer;
+    private Camera cam;
     private Coroutine confirmRoutine;
     
-    // OPTIMIERUNG: Gecachte Arrays - keine Allokationen zur Laufzeit
+    // OPTIMIERUNG: Gecachte Arrays
     private Vector3[] pathPositionsCache;
     private Vector3[] circlePositionsCache;
     
-    // OPTIMIERUNG: Basis-Vektoren Cache für Tangentialebene
+    // OPTIMIERUNG: Basis-Vektoren Cache
     private Vector3 cachedTangent1;
     private Vector3 cachedTangent2;
     private Vector3 lastNormal;
     
-    // OPTIMIERUNG: Performance Monitoring
+    // Performance Monitoring
     private int lastPathLength = 0;
     private float lastUpdateTime = 0f;
     
@@ -36,6 +48,7 @@ public class CircleVisualizer : MonoBehaviour
     {
         SetupLineRenderer();
         InitializeCaches();
+        cam = Camera.main;
         
         if (sphereCenter == null)
             sphereCenter = transform.parent;
@@ -43,14 +56,11 @@ public class CircleVisualizer : MonoBehaviour
     
     void InitializeCaches()
     {
-        // Pre-allocate arrays basierend auf maxPathPoints
         pathPositionsCache = new Vector3[maxPathPoints];
         circlePositionsCache = new Vector3[circleSegments + 1];
         
         if (enableDebug)
-        {
-            Debug.Log($"CircleVisualizer: Initialized caches - Path: {maxPathPoints}, Circle: {circleSegments + 1}");
-        }
+            Debug.Log($"CircleVisualizer: Caches initialized - Path: {maxPathPoints}, Circle: {circleSegments + 1}");
     }
     
     void OnEnable()
@@ -77,13 +87,12 @@ public class CircleVisualizer : MonoBehaviour
         lineRenderer.endColor = drawColor;
         lineRenderer.positionCount = 0;
         
-        // OPTIMIERUNG: Weitere LineRenderer Einstellungen für Performance
+        // Performance-Optimierungen
         lineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         lineRenderer.receiveShadows = false;
         lineRenderer.allowOcclusionWhenDynamic = false;
     }
     
-    // OPTIMIERUNG: Cached Array Update ohne Neuallokation
     void UpdatePath(List<Vector3> path, Vector3 normal)
     {
         if (path == null || path.Count == 0) 
@@ -92,33 +101,73 @@ public class CircleVisualizer : MonoBehaviour
             return;
         }
         
-        // Performance-Check: Nur bei Änderungen updaten
+        // Performance-Check
         if (path.Count == lastPathLength && Time.time - lastUpdateTime < 0.016f)
-            return; // Skip wenn < 60 FPS Updates
+            return;
         
         lineRenderer.startColor = drawColor;
         lineRenderer.endColor = drawColor;
         
         int pointCount = Mathf.Min(path.Count, pathPositionsCache.Length);
         
-        // OPTIMIERUNG: Direkt in gecachten Array schreiben
+        // Modus-abhängige Position-Berechnung
         for (int i = 0; i < pointCount; i++)
         {
-            pathPositionsCache[i] = path[i] + normal * heightOffset;
+            pathPositionsCache[i] = CalculateDrawPosition(path[i], normal);
         }
         
-        // OPTIMIERUNG: Nur nötige Positionen setzen
         lineRenderer.positionCount = pointCount;
         lineRenderer.SetPositions(pathPositionsCache);
         
-        // Cache Update
         lastPathLength = path.Count;
         lastUpdateTime = Time.time;
         
         if (enableDebug && pointCount != path.Count)
-        {
             Debug.LogWarning($"Path truncated: {path.Count} -> {pointCount} points");
+    }
+    
+    // Neue Methode: Berechnet Zeichenposition basierend auf Modus
+    Vector3 CalculateDrawPosition(Vector3 spherePoint, Vector3 normal)
+    {
+        switch (drawMode)
+        {
+            case DrawMode.WorldSpace:
+                return spherePoint + normal * worldSpaceHeight;
+                
+            case DrawMode.CursorProjection:
+                return ProjectToCursorRay(spherePoint);
+                
+            default:
+                return spherePoint + normal * worldSpaceHeight;
         }
+    }
+    
+    // Neue Methode: Projiziert Punkt auf Cursor-Ray
+    Vector3 ProjectToCursorRay(Vector3 spherePoint)
+    {
+        // Ray vom Cursor
+        Ray cursorRay = cam.ScreenPointToRay(Input.mousePosition);
+        
+        // Finde nächsten Punkt auf Ray zu spherePoint
+        Vector3 toSphere = spherePoint - cursorRay.origin;
+        float projLength = Vector3.Dot(toSphere, cursorRay.direction);
+        Vector3 projectedPoint = cursorRay.origin + cursorRay.direction * projLength;
+        
+        // Raycast auf Zeichenfläche
+        if (Physics.Raycast(cursorRay, out RaycastHit hit, raycastDistance, drawingSurface))
+        {
+            return hit.point;
+        }
+        
+        // Fallback: Projektion auf Z=0 Ebene
+        Plane drawPlane = new Plane(Vector3.forward, Vector3.zero);
+        if (drawPlane.Raycast(cursorRay, out float distance))
+        {
+            return cursorRay.GetPoint(distance);
+        }
+        
+        // Letzter Fallback
+        return projectedPoint;
     }
     
     void ShowConfirmation(Vector3 center, float radius, Vector3 normal)
@@ -129,10 +178,8 @@ public class CircleVisualizer : MonoBehaviour
         confirmRoutine = StartCoroutine(ConfirmationEffect(center, radius, normal));
     }
     
-    // OPTIMIERUNG: Cached Basis-Vektoren für Tangentialebene
     void CalculateTangentBasis(Vector3 normal)
     {
-        // Nur neu berechnen wenn sich Normal ändert
         if (Vector3.Dot(normal, lastNormal) > 0.999f) return;
         
         cachedTangent1 = Vector3.Cross(normal, Vector3.up);
@@ -144,31 +191,26 @@ public class CircleVisualizer : MonoBehaviour
         lastNormal = normal;
         
         if (enableDebug)
-        {
             Debug.Log($"Tangent basis recalculated for normal: {normal}");
-        }
     }
     
     System.Collections.IEnumerator ConfirmationEffect(Vector3 center, float radius, Vector3 normal)
     {
-        // OPTIMIERUNG: Cached Tangent-Basis verwenden
         CalculateTangentBasis(normal);
         
-        // Perfect circle in tangent plane - verwendet gecachten Array
+        // Kreis-Punkte berechnen - berücksichtigt Modus
         for (int i = 0; i <= circleSegments; i++)
         {
             float angle = (float)i / circleSegments * Mathf.PI * 2f;
             float cos = Mathf.Cos(angle);
             float sin = Mathf.Sin(angle);
             
-            Vector3 circlePoint = center + 
-                (cachedTangent1 * cos + cachedTangent2 * sin) * radius +
-                normal * heightOffset;
+            Vector3 sphereCirclePoint = center + (cachedTangent1 * cos + cachedTangent2 * sin) * radius;
+            Vector3 drawPosition = CalculateDrawPosition(sphereCirclePoint, normal);
             
-            circlePositionsCache[i] = circlePoint;
+            circlePositionsCache[i] = drawPosition;
         }
         
-        // OPTIMIERUNG: Farbe nur bei Änderung setzen
         if (lineRenderer.startColor != confirmColor)
         {
             lineRenderer.startColor = confirmColor;
@@ -179,9 +221,7 @@ public class CircleVisualizer : MonoBehaviour
         lineRenderer.SetPositions(circlePositionsCache);
         
         if (enableDebug)
-        {
-            Debug.Log($"Confirmation circle: {circleSegments} segments, radius: {radius:F2}");
-        }
+            Debug.Log($"Confirmation circle: {circleSegments} segments, radius: {radius:F2}, mode: {drawMode}");
         
         yield return new WaitForSeconds(1f);
         ClearPath();
@@ -199,12 +239,33 @@ public class CircleVisualizer : MonoBehaviour
         lastPathLength = 0;
         
         if (enableDebug)
-        {
             Debug.Log("Path cleared");
-        }
     }
     
-    // OPTIMIERUNG: Runtime-Konfiguration
+    // Neue Utility-Methoden für Modus-Wechsel
+    public void SetDrawMode(DrawMode mode)
+    {
+        drawMode = mode;
+        if (enableDebug)
+            Debug.Log($"Draw mode changed to: {mode}");
+    }
+    
+    public void SetWorldSpaceHeight(float height)
+    {
+        worldSpaceHeight = height;
+    }
+    
+    public void SetRaycastDistance(float distance)
+    {
+        raycastDistance = distance;
+    }
+    
+    public void SetDrawingSurface(LayerMask mask)
+    {
+        drawingSurface = mask;
+    }
+    
+    // Erweiterte Performance-Settings
     public void SetMaxPathPoints(int newMax)
     {
         if (newMax <= 0 || newMax == maxPathPoints) return;
@@ -213,9 +274,7 @@ public class CircleVisualizer : MonoBehaviour
         pathPositionsCache = new Vector3[maxPathPoints];
         
         if (enableDebug)
-        {
             Debug.Log($"Path cache resized to {maxPathPoints} points");
-        }
     }
     
     public void SetCircleSegments(int newSegments)
@@ -226,12 +285,9 @@ public class CircleVisualizer : MonoBehaviour
         circlePositionsCache = new Vector3[circleSegments + 1];
         
         if (enableDebug)
-        {
             Debug.Log($"Circle cache resized to {circleSegments + 1} points");
-        }
     }
     
-    // OPTIMIERUNG: Bulk-Update für bessere Performance bei vielen Änderungen
     public void UpdateLineRendererSettings(float newWidth, Color newDrawColor, Color newConfirmColor)
     {
         bool changed = false;
@@ -256,35 +312,37 @@ public class CircleVisualizer : MonoBehaviour
         }
         
         if (changed && enableDebug)
-        {
-            Debug.Log($"LineRenderer settings updated - Width: {newWidth}, DrawColor: {newDrawColor}");
-        }
+            Debug.Log($"Settings updated - Width: {newWidth}, Mode: {drawMode}");
     }
     
-    // Performance-Monitoring
+    // Debug GUI
     void OnGUI()
     {
         if (!enableDebug) return;
         
         GUI.color = Color.white;
-        GUILayout.BeginArea(new Rect(320, 10, 250, 120));
+        GUILayout.BeginArea(new Rect(320, 10, 250, 140));
         GUILayout.Label("CircleVisualizer Debug:");
+        GUILayout.Label($"Draw Mode: {drawMode}");
         GUILayout.Label($"Path Cache: {pathPositionsCache?.Length ?? 0}");
         GUILayout.Label($"Circle Cache: {circlePositionsCache?.Length ?? 0}");
         GUILayout.Label($"Last Path Length: {lastPathLength}");
         GUILayout.Label($"LineRenderer Points: {lineRenderer.positionCount}");
+        
+        // Mode-Toggle Buttons
+        if (GUILayout.Button($"Toggle Mode (Current: {drawMode})"))
+        {
+            drawMode = drawMode == DrawMode.WorldSpace ? DrawMode.CursorProjection : DrawMode.WorldSpace;
+        }
+        
         GUILayout.EndArea();
     }
     
-    // OPTIMIERUNG: Cleanup bei Destroy
     void OnDestroy()
     {
         if (confirmRoutine != null)
-        {
             StopCoroutine(confirmRoutine);
-        }
         
-        // Arrays werden automatisch von GC aufgeräumt
         pathPositionsCache = null;
         circlePositionsCache = null;
     }
