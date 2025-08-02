@@ -1,12 +1,16 @@
 using UnityEngine;
 
+/// <summary>
+/// Circle Target System - Unity 6 LTS
+/// UPDATED: GameEvents Integration
+/// </summary>
 public class CircleTarget : MonoBehaviour
 {
     [Header("Target Settings")]
     [SerializeField] private int priority = 0;
     [SerializeField] private int pointValue = 100;
     [SerializeField] private bool isActive = true;
-    [SerializeField] private float detectionRadius = 1f;  // Radius für Raycast-Detection
+    [SerializeField] private float detectionRadius = 1f;
     
     [Header("Visual Feedback")]
     [SerializeField] private GameObject selectionEffect;
@@ -37,19 +41,21 @@ public class CircleTarget : MonoBehaviour
     
     void OnEnable()
     {
-        CircleManager.OnTargetSelected += OnAnyTargetSelected;
+        // UPDATED: Subscribe to GameEvents
+        GameEvents.OnTargetSelected += OnAnyTargetSelected;
     }
     
     void OnDisable()
     {
-        CircleManager.OnTargetSelected -= OnAnyTargetSelected;
+        // UPDATED: Unsubscribe from GameEvents
+        GameEvents.OnTargetSelected -= OnAnyTargetSelected;
     }
     
     public void SetActive(bool active) => isActive = active;
     public void SetPriority(int newPriority) => priority = newPriority;
     public void SetPointValue(int newValue) => pointValue = newValue;
     
-    public static event System.Action<CircleTarget, Vector3, float> OnTargetSelected; // + speedBonus
+    // REMOVED: Static event - now using GameEvents
     
     public void SelectTarget(Vector3 selectionCenter, float speedBonus = 1f)
     {
@@ -60,7 +66,9 @@ public class CircleTarget : MonoBehaviour
         float finalBonus = speedBonus * playerSpeedMultiplier;
         int bonusPoints = Mathf.RoundToInt(pointValue * finalBonus);
         
-        OnTargetSelected?.Invoke(this, selectionCenter, finalBonus);
+        // UPDATED: Event wird bereits von CircleManager über GameEvents getriggert
+        // GameEvents.TriggerTargetSelected(this, selectionCenter, finalBonus);
+        
         ShowSelectionEffect();
         Debug.Log($"Target {name} selected - Priority: {priority}, Base: {pointValue}, Bonus: {bonusPoints}, Total: {pointValue + bonusPoints}");
     }

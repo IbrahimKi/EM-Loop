@@ -1,6 +1,10 @@
 using UnityEngine;
 using System.Collections;
 
+/// <summary>
+/// Dash Path Visualizer - Unity 6 LTS
+/// UPDATED: GameEvents Integration
+/// </summary>
 [RequireComponent(typeof(LineRenderer))]
 public class DashPathVisualizer : MonoBehaviour
 {
@@ -38,16 +42,18 @@ public class DashPathVisualizer : MonoBehaviour
     
     void OnEnable()
     {
-        CircleManager.OnCircleConfirmed += ShowDashPath;
-        PlayerDash.OnDashStarted += OnDashStarted;
-        PlayerDash.OnDashCompleted += HidePath;
+        // UPDATED: Subscribe to GameEvents instead of static events
+        GameEvents.OnCircleConfirmed += ShowDashPath;
+        GameEvents.OnDashStarted += OnDashStarted;
+        GameEvents.OnDashCompleted += HidePath;
     }
     
     void OnDisable()
     {
-        CircleManager.OnCircleConfirmed -= ShowDashPath;
-        PlayerDash.OnDashStarted -= OnDashStarted;
-        PlayerDash.OnDashCompleted -= HidePath;
+        // UPDATED: Unsubscribe from GameEvents
+        GameEvents.OnCircleConfirmed -= ShowDashPath;
+        GameEvents.OnDashStarted -= OnDashStarted;
+        GameEvents.OnDashCompleted -= HidePath;
         
         if (fadeId >= 0) LeanTween.cancel(fadeId);
     }
@@ -58,7 +64,13 @@ public class DashPathVisualizer : MonoBehaviour
         lineRenderer.startWidth = lineWidth;
         lineRenderer.endWidth = lineWidth;
         lineRenderer.useWorldSpace = true;
-        lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
+        
+        // Unity 6 LTS Material Setup
+        var shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Lit-Default");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+        
+        lineRenderer.material = new Material(shader);
         lineRenderer.startColor = pathColor;
         lineRenderer.endColor = pathColor;
         lineRenderer.positionCount = 0;
@@ -163,4 +175,41 @@ public class DashPathVisualizer : MonoBehaviour
                 fadeId = -1;
             }).id;
     }
+    
+    // Public API
+    public void SetPathColor(Color color)
+    {
+        pathColor = color;
+        if (lineRenderer != null)
+        {
+            lineRenderer.startColor = color;
+            lineRenderer.endColor = color;
+        }
+    }
+    
+    public void SetLineWidth(float width)
+    {
+        lineWidth = Mathf.Max(0.01f, width);
+        if (lineRenderer != null)
+        {
+            lineRenderer.startWidth = lineWidth;
+            lineRenderer.endWidth = lineWidth;
+        }
+    }
+    
+    public void SetCurveAltitude(float altitude)
+    {
+        curveAltitude = Mathf.Max(0f, altitude);
+    }
+    
+    public void SetShowOnlyDuringStartup(bool showOnly)
+    {
+        showOnlyDuringStartup = showOnly;
+    }
+    
+    // Getters
+    public bool IsVisible => isVisible;
+    public Color PathColor => pathColor;
+    public float LineWidth => lineWidth;
+    public float CurveAltitude => curveAltitude;
 }

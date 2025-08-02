@@ -1,10 +1,13 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-
+/// <summary>
+/// Circle Area Instance - GameEvents Compatible
+/// UPDATED: Works with AdvancedCircleManager
+/// </summary>
 public class CircleAreaInstance : MonoBehaviour
 {
-    private CircleManager manager;
+    private CircleManager manager; // FIXED: Correct type name
     private LineRenderer circleRenderer;
     private SphereCollider damageCollider;
     private HashSet<IDamageable> damagedTargets;
@@ -14,7 +17,7 @@ public class CircleAreaInstance : MonoBehaviour
     private bool isActive = false;
     private bool hasDamaged = false;
     
-    public void Initialize(CircleManager mgr, Material material, int segments)
+    public void Initialize(CircleManager mgr, Material material, int segments) // FIXED: Correct type name
     {
         manager = mgr;
         damagedTargets = new HashSet<IDamageable>();
@@ -44,7 +47,12 @@ public class CircleAreaInstance : MonoBehaviour
     
     Material CreateDefaultMaterial()
     {
-        Material mat = new Material(Shader.Find("Sprites/Default"));
+        // Unity 6 LTS compatible material
+        var shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Lit-Default");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+        
+        Material mat = new Material(shader);
         mat.color = new Color(1f, 0.5f, 0f, 0.8f);
         return mat;
     }
@@ -153,7 +161,12 @@ public class CircleAreaInstance : MonoBehaviour
             damageCount++;
         }
         
-        manager.TriggerAreaDamageEvent(transform.position, damageCollider.radius, damageCount);
+        // UPDATED: Use manager's method for triggering area damage
+        if (manager)
+        {
+            GameEvents.TriggerAreaDamageDealt(transform.position, damageCollider.radius, damageCount);
+        }
+        
         damageCollider.enabled = false;
     }
     
@@ -199,4 +212,8 @@ public class CircleAreaInstance : MonoBehaviour
     {
         CancelAnimations();
     }
+    
+    // Public API
+    public bool IsActive => isActive;
+    public bool HasDamaged => hasDamaged;
 }

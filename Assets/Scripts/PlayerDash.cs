@@ -1,5 +1,9 @@
 using UnityEngine;
 
+/// <summary>
+/// Player Dash System - Unity 6 LTS
+/// UPDATED: GameEvents Integration
+/// </summary>
 public class PlayerDash : MonoBehaviour
 {
     [Header("Dash Settings")]
@@ -14,9 +18,7 @@ public class PlayerDash : MonoBehaviour
     private int tweenId = -1;
     private Vector3[] dashPath;
     
-    // Events
-    public static event System.Action<Vector3> OnDashStarted;
-    public static event System.Action<Vector3> OnDashCompleted;
+    // REMOVED: Static events - now using GameEvents
     
     void Awake()
     {
@@ -28,12 +30,14 @@ public class PlayerDash : MonoBehaviour
     
     void OnEnable()
     {
-        CircleManager.OnCircleConfirmed += DashToPosition;
+        // UPDATED: Subscribe to GameEvents
+        GameEvents.OnCircleConfirmed += DashToPosition;
     }
     
     void OnDisable()
     {
-        CircleManager.OnCircleConfirmed -= DashToPosition;
+        // UPDATED: Unsubscribe from GameEvents
+        GameEvents.OnCircleConfirmed -= DashToPosition;
         CancelDash();
     }
     
@@ -52,7 +56,9 @@ public class PlayerDash : MonoBehaviour
         if (Vector3.Distance(startPos, targetPos) < 0.1f) return;
         
         isDashing = true;
-        OnDashStarted?.Invoke(targetPos);
+        
+        // UPDATED: Use GameEvents
+        GameEvents.TriggerDashStarted(targetPos);
         
         if (tweenId >= 0) LeanTween.cancel(tweenId);
         
@@ -65,7 +71,9 @@ public class PlayerDash : MonoBehaviour
                 .setEase(dashCurve)
                 .setOnComplete(() => {
                     isDashing = false;
-                    OnDashCompleted?.Invoke(targetPos);
+                    
+                    // UPDATED: Use GameEvents
+                    GameEvents.TriggerDashCompleted(targetPos);
                     tweenId = -1;
                 }).id;
         }).id;
@@ -97,5 +105,12 @@ public class PlayerDash : MonoBehaviour
         }
     }
     
+    // Public API
     public bool IsDashing => isDashing;
+    public float GetDashDuration() => dashDuration;
+    public bool IsDashEnabled() => enableDash;
+    
+    public void SetDashEnabled(bool enabled) => enableDash = enabled;
+    public void SetDashDuration(float duration) => dashDuration = Mathf.Max(0.1f, duration);
+    public void SetStartupDelay(float delay) => startupDelay = Mathf.Max(0f, delay);
 }

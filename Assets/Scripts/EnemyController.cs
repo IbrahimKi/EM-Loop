@@ -3,6 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Simple Enemy Controller - 3 Frame Animation mit AOE Attack
 /// Unity 6 LTS - Event-basiert, Performance optimiert
+/// UPDATED: GameEvents Integration
 /// </summary>
 [RequireComponent(typeof(Damageable))]
 public class EnemyController : MonoBehaviour
@@ -34,9 +35,7 @@ public class EnemyController : MonoBehaviour
     private float stateTimer;
     private bool hasAttacked = false;
     
-    // Events
-    public static event System.Action<EnemyController, float, int> OnEnemyAttacked; // enemy, damage, targetsHit
-    public static event System.Action<EnemyController, int, ResourceType> OnEnemyDestroyed; // enemy, value, type
+    // REMOVED: Static events - now using GameEvents
     
     void Awake()
     {
@@ -49,11 +48,14 @@ public class EnemyController : MonoBehaviour
     
     void OnEnable()
     {
+        // UPDATED: Subscribe to GameEvents for Damageable events
+        // Note: Damageable still uses its own events, but enemy-specific events use GameEvents
         Damageable.OnDestroyed += OnDamageableDestroyed;
     }
     
     void OnDisable()
     {
+        // UPDATED: Unsubscribe from events
         Damageable.OnDestroyed -= OnDamageableDestroyed;
     }
     
@@ -161,8 +163,8 @@ public class EnemyController : MonoBehaviour
             Destroy(effect, 2f);
         }
         
-        // Event
-        OnEnemyAttacked?.Invoke(this, attackDamage, targetsHit);
+        // UPDATED: Use GameEvents
+        GameEvents.TriggerEnemyAttacked(this, attackDamage, targetsHit);
         
         Debug.Log($"Enemy {name} attacked! Targets hit: {targetsHit}, Damage: {attackDamage}");
     }
@@ -171,8 +173,8 @@ public class EnemyController : MonoBehaviour
     {
         if (destroyed == damageableComponent)
         {
-            // Give resource to player
-            OnEnemyDestroyed?.Invoke(this, resourceValue, resourceType);
+            // UPDATED: Use GameEvents
+            GameEvents.TriggerEnemyDestroyed(this, resourceValue, resourceType);
             
             Debug.Log($"Enemy destroyed! Gave {resourceValue} {resourceType} to player");
         }

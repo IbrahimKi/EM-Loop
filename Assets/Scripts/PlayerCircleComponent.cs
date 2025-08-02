@@ -3,6 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Optimized Player Circle Component - Clean Integration
 /// Unity 6 LTS - Focused on player stats and progression
+/// UPDATED: GameEvents Integration
 /// </summary>
 [RequireComponent(typeof(PlayerDash))]
 public class OptimizedPlayerCircleComponent : MonoBehaviour
@@ -34,11 +35,7 @@ public class OptimizedPlayerCircleComponent : MonoBehaviour
     private int totalTargetsHit = 0;
     private float totalDamageDealt = 0f;
     
-    // Events for UI/Stats
-    public static event System.Action<int, float> OnCircleStatsUpdated; // count, avgQuality
-    public static event System.Action<float, int> OnDamageDealt; // damage, targets
-    public static event System.Action<int, int, int> OnExperienceGained; // gained, current, toNext
-    public static event System.Action<int> OnPlayerLevelUp; // newLevel
+    // REMOVED: Static events - now using GameEvents
     
     void Awake()
     {
@@ -68,21 +65,20 @@ public class OptimizedPlayerCircleComponent : MonoBehaviour
     
     void SubscribeToEvents()
     {
-        // Circle System Events
-        CircleManager.OnCircleConfirmedWithQuality += OnCircleConfirmed;
-        CircleManager.OnAreaDamageDealt += OnAreaDamageDealt;
-        
-        // Player Events
-        PlayerDash.OnDashStarted += OnDashStarted;
-        PlayerDash.OnDashCompleted += OnDashCompleted;
+        // UPDATED: Subscribe to GameEvents
+        GameEvents.OnCircleConfirmedWithQuality += OnCircleConfirmed;
+        GameEvents.OnAreaDamageDealt += OnAreaDamageDealt;
+        GameEvents.OnDashStarted += OnDashStarted;
+        GameEvents.OnDashCompleted += OnDashCompleted;
     }
     
     void UnsubscribeFromEvents()
     {
-        CircleManager.OnCircleConfirmedWithQuality -= OnCircleConfirmed;
-        CircleManager.OnAreaDamageDealt -= OnAreaDamageDealt;
-        PlayerDash.OnDashStarted -= OnDashStarted;
-        PlayerDash.OnDashCompleted -= OnDashCompleted;
+        // UPDATED: Unsubscribe from GameEvents
+        GameEvents.OnCircleConfirmedWithQuality -= OnCircleConfirmed;
+        GameEvents.OnAreaDamageDealt -= OnAreaDamageDealt;
+        GameEvents.OnDashStarted -= OnDashStarted;
+        GameEvents.OnDashCompleted -= OnDashCompleted;
     }
     
     #region Event Handlers
@@ -92,8 +88,8 @@ public class OptimizedPlayerCircleComponent : MonoBehaviour
         circlesPerformed++;
         lastCircleQuality = quality;
         
-        // Update stats event
-        OnCircleStatsUpdated?.Invoke(circlesPerformed, quality);
+        // UPDATED: Trigger GameEvents
+        GameEvents.TriggerCircleStatsUpdated(circlesPerformed, quality);
         
         Debug.Log($"Circle #{circlesPerformed} - Quality: {GetQualityText(quality)} ({quality:F2})");
     }
@@ -124,8 +120,8 @@ public class OptimizedPlayerCircleComponent : MonoBehaviour
         // Gain experience
         GainExperience(targetCount, lastCircleQuality);
         
-        // Fire events
-        OnDamageDealt?.Invoke(totalDamage, targetCount);
+        // UPDATED: Trigger GameEvents
+        GameEvents.TriggerDamageDealt(totalDamage, targetCount);
         
         Debug.Log($"Dealt {totalDamage:F0} damage to {targetCount} targets");
     }
@@ -161,8 +157,8 @@ public class OptimizedPlayerCircleComponent : MonoBehaviour
         // Check for level up
         CheckLevelUp();
         
-        // Fire event
-        OnExperienceGained?.Invoke(totalXP, currentExperience, experienceToNextLevel);
+        // UPDATED: Trigger GameEvents
+        GameEvents.TriggerExperienceGained(totalXP, currentExperience, experienceToNextLevel);
         
         Debug.Log($"Gained {totalXP} XP (Targets: {targetsHit}, Quality Bonus: {qualityBonus:F0})");
     }
@@ -180,8 +176,8 @@ public class OptimizedPlayerCircleComponent : MonoBehaviour
             // Auto-upgrades on level up
             ApplyLevelUpBonuses();
             
-            // Fire event
-            OnPlayerLevelUp?.Invoke(circleLevel);
+            // UPDATED: Trigger GameEvents
+            GameEvents.TriggerPlayerLevelUp(circleLevel);
             
             Debug.Log($"LEVEL UP! Now level {circleLevel}");
         }
@@ -248,7 +244,7 @@ public class OptimizedPlayerCircleComponent : MonoBehaviour
         currentExperience += amount;
         CheckLevelUp();
         
-        OnExperienceGained?.Invoke(amount, currentExperience, experienceToNextLevel);
+        GameEvents.TriggerExperienceGained(amount, currentExperience, experienceToNextLevel);
     }
     
     #endregion
