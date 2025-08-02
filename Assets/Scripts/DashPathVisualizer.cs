@@ -38,14 +38,14 @@ public class DashPathVisualizer : MonoBehaviour
     
     void OnEnable()
     {
-        CircleSelector.OnCircleConfirmed += ShowDashPath;
+        CircleManager.OnCircleConfirmed += ShowDashPath;
         PlayerDash.OnDashStarted += OnDashStarted;
         PlayerDash.OnDashCompleted += HidePath;
     }
     
     void OnDisable()
     {
-        CircleSelector.OnCircleConfirmed -= ShowDashPath;
+        CircleManager.OnCircleConfirmed -= ShowDashPath;
         PlayerDash.OnDashStarted -= OnDashStarted;
         PlayerDash.OnDashCompleted -= HidePath;
         

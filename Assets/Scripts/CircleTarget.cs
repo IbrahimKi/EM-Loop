@@ -37,12 +37,12 @@ public class CircleTarget : MonoBehaviour
     
     void OnEnable()
     {
-        CircleSelector.OnTargetSelected += OnAnyTargetSelected;
+        CircleManager.OnTargetSelected += OnAnyTargetSelected;
     }
     
     void OnDisable()
     {
-        CircleSelector.OnTargetSelected -= OnAnyTargetSelected;
+        CircleManager.OnTargetSelected -= OnAnyTargetSelected;
     }
     
     public void SetActive(bool active) => isActive = active;

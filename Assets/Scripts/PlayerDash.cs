@@ -28,12 +28,12 @@ public class PlayerDash : MonoBehaviour
     
     void OnEnable()
     {
-        CircleSelector.OnCircleConfirmed += DashToPosition;
+        CircleManager.OnCircleConfirmed += DashToPosition;
     }
     
     void OnDisable()
     {
-        CircleSelector.OnCircleConfirmed -= DashToPosition;
+        CircleManager.OnCircleConfirmed -= DashToPosition;
         CancelDash();
     }
     

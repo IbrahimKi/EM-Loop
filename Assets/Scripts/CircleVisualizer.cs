@@ -1,132 +1,174 @@
 using UnityEngine;
+using UnityEngine.Events;
 
-[RequireComponent(typeof(LineRenderer))]
-public class CircleVisualizer : MonoBehaviour
+using System;
+
+[System.Serializable]
+public class CircleEvent : UnityEvent<float> { }
+
+// Alternative: C# Events für Unity 6
+[System.Serializable]
+public class CircleEventSystem
 {
-    [Header("Visual Settings")]
+    public event Action<float> OnRadiusChanged;
+    public void InvokeRadiusChanged(float radius) => OnRadiusChanged?.Invoke(radius);
+}
+
+public class OptimizedCircleVisualizer : MonoBehaviour
+{
+    [Header("Circle Settings")]
+    [SerializeField] private float radius = 5f;
+    [SerializeField] private int segments = 64;
     [SerializeField] private float lineWidth = 0.1f;
-    [SerializeField] private Color drawColor = Color.yellow;
-    [SerializeField] private Color confirmColor = Color.green;
     
+    [Header("Performance")]
+    [SerializeField] private bool useObjectPool = true;
+    [SerializeField] private bool cacheMesh = true;
+    
+    [Header("Events")]  
+    public CircleEventSystem Events = new CircleEventSystem();
+    
+    // Components
     private LineRenderer lineRenderer;
-    private Coroutine confirmRoutine;
+    private MeshFilter meshFilter;
+    private MeshRenderer meshRenderer;
+    
+    // Cache
+    private Vector3[] cachedPoints;
+    private Mesh cachedMesh;
+    private float lastRadius;
+    private int lastSegments;
     
     void Awake()
     {
-        SetupLineRenderer();
+        CacheReferences();
+        InitializeCircle();
     }
     
-    void SetupLineRenderer()
+    void CacheReferences()
     {
+        // LineRenderer Component sicherstellen
         lineRenderer = GetComponent<LineRenderer>();
-        lineRenderer.startWidth = lineWidth;
-        lineRenderer.endWidth = lineWidth;
-        lineRenderer.useWorldSpace = true;
-        lineRenderer.startColor = drawColor;
-        lineRenderer.endColor = drawColor;
-        lineRenderer.positionCount = 0;
-        lineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        lineRenderer.receiveShadows = false;
-    }
-    
-    void OnEnable()
-    {
-        CircleSelector.OnPathUpdated += UpdatePath;
-        CircleSelector.OnCircleConfirmed += ShowConfirmation;
-        CircleSelector.OnDrawingCancelled += ClearPath;
-    }
-    
-    void OnDisable()
-    {
-        CircleSelector.OnPathUpdated -= UpdatePath;
-        CircleSelector.OnCircleConfirmed -= ShowConfirmation;
-        CircleSelector.OnDrawingCancelled -= ClearPath;
-    }
-    
-    void UpdatePath(Vector3[] points)
-    {
-        // PERFORMANCE: Direkt vom Array ohne Kopieren
-        var selector = FindObjectOfType<CircleSelector>();
-        int pointCount = selector.GetPointCount();
-        
-        if (pointCount == 0)
+        if (lineRenderer == null)
         {
-            lineRenderer.positionCount = 0;
-            return;
+            lineRenderer = gameObject.AddComponent<LineRenderer>();
         }
         
-        // FADE SYSTEM: Berechne durchschnittlichen Fade-Faktor
-        float[] fadeFactors = selector.GetPointFadeFactors();
-        float averageFade = 1f;
+        // Mesh Components für alternative Darstellung
+        meshFilter = GetComponent<MeshFilter>();
+        meshRenderer = GetComponent<MeshRenderer>();
         
-        if (fadeFactors != null && pointCount > 0)
+        // LineRenderer Setup
+        if (lineRenderer != null)
         {
-            // Durchschnittlicher Fade der letzten 20% der Punkte
-            int fadeCheckCount = Mathf.Max(1, pointCount / 5);
-            float fadeSum = 0f;
+            lineRenderer.useWorldSpace = false;
+            lineRenderer.loop = true;
+            lineRenderer.startWidth = lineWidth;
+            lineRenderer.endWidth = lineWidth;
             
-            for (int i = 0; i < fadeCheckCount; i++)
+            // Material zuweisen falls nicht vorhanden
+            if (lineRenderer.material == null)
             {
-                fadeSum += fadeFactors[i];
+                lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
             }
-            averageFade = fadeSum / fadeCheckCount;
         }
-        
-        // SIMPLE FADE: Gesamte Linie mit durchschnittlichem Alpha
-        Color startColor = new Color(drawColor.r, drawColor.g, drawColor.b, drawColor.a * averageFade);
-        Color endColor = new Color(drawColor.r, drawColor.g, drawColor.b, drawColor.a);
-        
-        lineRenderer.startColor = startColor; // Hinten (gefaded)
-        lineRenderer.endColor = endColor;     // Vorne (voll sichtbar)
-        lineRenderer.positionCount = pointCount;
-        
-        // PERFORMANCE: SetPositions mit slice
-        Vector3[] positions = new Vector3[pointCount];
-        System.Array.Copy(points, 0, positions, 0, pointCount);
-        lineRenderer.SetPositions(positions);
     }
     
-    void ShowConfirmation(Vector3 center, float radius, Vector3 normal)
+    void InitializeCircle()
     {
-        if (confirmRoutine != null) StopCoroutine(confirmRoutine);
-        confirmRoutine = StartCoroutine(ConfirmationEffect(center, radius, normal));
-    }
-    
-    System.Collections.IEnumerator ConfirmationEffect(Vector3 center, float radius, Vector3 normal)
-    {
-        // SIMPLE: Zeichne perfekten Kreis
-        int segments = 32;
-        Vector3[] circlePoints = new Vector3[segments + 1];
+        cachedPoints = new Vector3[segments];
+        UpdateCirclePoints();
         
-        Vector3 tangent1 = Vector3.Cross(normal, Vector3.up);
-        if (tangent1.sqrMagnitude < 0.01f) tangent1 = Vector3.Cross(normal, Vector3.forward);
-        tangent1.Normalize();
-        
-        Vector3 tangent2 = Vector3.Cross(normal, tangent1);
-        
-        for (int i = 0; i <= segments; i++)
+        if (lineRenderer != null)
         {
-            float angle = (float)i / segments * Mathf.PI * 2f;
-            circlePoints[i] = center + 
-                (tangent1 * Mathf.Cos(angle) + tangent2 * Mathf.Sin(angle)) * radius;
+            lineRenderer.positionCount = segments;
+            lineRenderer.SetPositions(cachedPoints);
         }
-        
-        lineRenderer.startColor = confirmColor;
-        lineRenderer.endColor = confirmColor;
-        lineRenderer.positionCount = segments + 1;
-        lineRenderer.SetPositions(circlePoints);
-        
-        yield return new WaitForSeconds(1f);
-        ClearPath();
     }
     
-    void ClearPath()
+    void UpdateCirclePoints()
     {
-        if (confirmRoutine != null)
+        if (cachedPoints == null || cachedPoints.Length != segments)
         {
-            StopCoroutine(confirmRoutine);
-            confirmRoutine = null;
+            cachedPoints = new Vector3[segments];
         }
-        lineRenderer.positionCount = 0;
+        
+        float angleStep = 2f * Mathf.PI / segments;
+        
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = i * angleStep;
+            cachedPoints[i] = new Vector3(
+                Mathf.Cos(angle) * radius,
+                0f,
+                Mathf.Sin(angle) * radius
+            );
+        }
+        
+        lastRadius = radius;
+        lastSegments = segments;
+    }
+    
+    void Update()
+    {
+        // Nur updaten wenn sich was geändert hat
+        if (radius != lastRadius || segments != lastSegments)
+        {
+            UpdateCircle();
+        }
+    }
+    
+    public void UpdateCircle()
+    {
+        UpdateCirclePoints();
+        
+        if (lineRenderer != null)
+        {
+            lineRenderer.positionCount = segments;
+            lineRenderer.SetPositions(cachedPoints);
+            lineRenderer.startWidth = lineWidth;
+            lineRenderer.endWidth = lineWidth;
+        }
+        
+        Events.InvokeRadiusChanged(radius);
+    }
+    
+    public void SetRadius(float newRadius)
+    {
+        radius = Mathf.Max(0.1f, newRadius);
+        UpdateCircle();
+    }
+    
+    public void SetSegments(int newSegments)
+    {
+        segments = Mathf.Clamp(newSegments, 8, 256);
+        UpdateCircle();
+    }
+    
+    public void SetLineWidth(float width)
+    {
+        lineWidth = Mathf.Max(0.01f, width);
+        if (lineRenderer != null)
+        {
+            lineRenderer.startWidth = lineWidth;
+            lineRenderer.endWidth = lineWidth;
+        }
+    }
+    
+    // Public Getters
+    public float Radius => radius;
+    public int Segments => segments;
+    public Vector3[] Points => cachedPoints;
+    
+    void OnValidate()
+    {
+        radius = Mathf.Max(0.1f, radius);
+        segments = Mathf.Clamp(segments, 8, 256);
+        lineWidth = Mathf.Max(0.01f, lineWidth);
+        
+        if (Application.isPlaying)
+        {
+            UpdateCircle();
+        }
     }
 }
