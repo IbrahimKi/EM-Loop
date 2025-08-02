@@ -509,9 +509,9 @@ MonoBehaviour:
   circleLevel: 1
   enableAreaDamage: 1
   enableVisualEffect: 1
-  baseDamage: 25
+  baseDamage: 5
   experiencePerTarget: 10
-  qualityBonusXP: 5
+  qualityBonusXP: 0
   currentExperience: 0
   experienceToNextLevel: 100
 --- !u!1 &382146018
@@ -3407,15 +3407,19 @@ PrefabInstance:
       objectReference: {fileID: 10303, guid: 0000000000000000f000000000000000, type: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: fadeSpeed
-      value: 0.5
+      value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
+      propertyPath: maxPoints
+      value: 60
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: maxDistance
-      value: 5
+      value: 0.08
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: minDistance
-      value: 0.1
+      value: 0.02
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: sphereCenter
@@ -3427,7 +3431,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: maxLineLength
-      value: 12
+      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: surfaceOffset
@@ -3438,8 +3442,12 @@ PrefabInstance:
       value: 64
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
-      propertyPath: speedThreshold
+      propertyPath: fadeZoneLength
       value: 1.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
+      propertyPath: speedThreshold
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: minCircleRadius
@@ -3452,6 +3460,10 @@ PrefabInstance:
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: enableCatmullRom
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
+      propertyPath: minFadeThreshold
+      value: 0.08
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: adaptiveThreshold
@@ -3470,6 +3482,10 @@ PrefabInstance:
       value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
+      propertyPath: maxCleanupPerFrame
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: minClosureDistance
       value: 5
       objectReference: {fileID: 0}
@@ -3479,7 +3495,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: maxInterpolationSteps
-      value: 20
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: damageableLayer.m_Bits
@@ -3492,6 +3508,10 @@ PrefabInstance:
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: enableSphereAwareCurves
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
+      propertyPath: maxPointsToRemovePerFrame
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 6648913994873094413, guid: 45ef4e66734205b42bd3db9e3e618b73, type: 3}
       propertyPath: enableAdaptiveInterpolation

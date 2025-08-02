@@ -2,8 +2,8 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// Circle Manager - Fixed Visual Offset & Circle Positioning
-/// Unity 6 LTS - Kamera-ausgerichteter Offset + intelligente Kreispositionierung
+/// FIXED: Immediate Response CircleManager
+/// Performance-optimiert für sofortige Linien-Anzeige
 /// </summary>
 public class CircleManager : MonoBehaviour
 {
@@ -13,7 +13,7 @@ public class CircleManager : MonoBehaviour
     [SerializeField] private LayerMask damageableLayer = -1;
     [SerializeField] private Transform sphereCenter;
     
-    [Header("Drawing")]
+    [Header("Drawing - IMMEDIATE")]
     [SerializeField] private float minDistance = 0.03f;
     [SerializeField] private float maxDistance = 0.15f;
     [SerializeField] private int maxPoints = 120;
@@ -23,24 +23,31 @@ public class CircleManager : MonoBehaviour
     [SerializeField] private float maxLineLength = 8f;
     [SerializeField] private bool enableLengthLimit = true;
     [SerializeField] private float fadeZoneLength = 2f;
-    [SerializeField] private float fadeSpeed = 3f;
+    [SerializeField] private float fadeSpeed = 8f; // INCREASED für schnelleres Fade
     
     [Header("Screen Space Drawing")]
     [SerializeField] private bool useScreenSpaceCalculation = true;
     [SerializeField] private float screenToWorldScale = 0.01f;
     [SerializeField] private float drawingPlaneDistance = 10f;
-    [SerializeField] private bool projectVisualsToSurface = true;
+    [SerializeField] private bool projectVisualsToSurface = false;  // DISABLED: Hauptursache für Jumping
     [SerializeField] private float surfaceOffset = 0.1f;
-    [SerializeField] private bool useCameraAlignedOffset = true; // NEW: Kamera-orientierter Offset
+    [SerializeField] private bool useCameraAlignedOffset = true;
     [SerializeField] private bool enableCatmullRom = false;
     [SerializeField] private float curveTension = 0.5f;
     [SerializeField] private int smoothingSegments = 3;
     [SerializeField] private AnimationCurve fadeCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
     [SerializeField] private bool useAnimationCurve = false;
     
-    [Header("Performance Settings")]
-    [SerializeField] private bool enableUpdateThrottling = true;
-    [SerializeField] private float updateInterval = 0.033f;
+    [Header("SIMPLE Line Offset")]
+    [SerializeField] private bool enableSimpleOffset = true;         // NEW: Einfacher Offset
+    [SerializeField] private float heightOffset = 0.15f;            // NEW: Höhe über Sphere
+    [SerializeField] private float cameraOffset = 0.05f;            // NEW: Richtung Kamera
+    
+    [Header("Performance Settings - IMMEDIATE MODE")]
+    [SerializeField] private bool enableUpdateThrottling = false; // DISABLED für sofortige Response
+    [SerializeField] private float updateInterval = 0.016f; // 60 FPS wenn enabled
+    [SerializeField] private bool enableSmartCleanup = true; // NEW: Intelligentes Cleanup
+    [SerializeField] private int maxCleanupPerFrame = 3; // NEW: Begrenzte Cleanup-Operationen
     
     [Header("Circle Detection")]
     [SerializeField] private float minCircleRadius = 0.5f;
@@ -60,18 +67,18 @@ public class CircleManager : MonoBehaviour
     [SerializeField] private float poorQualityPenalty = 0.2f;
     
     [Header("Circle Positioning")]
-    [SerializeField] private float linearPathThreshold = 0.6f; // Schwelle für lineare Pfade
-    [SerializeField] private bool useIntelligentCirclePositioning = true; // NEW: Intelligente Positionierung
+    [SerializeField] private float linearPathThreshold = 0.6f;
+    [SerializeField] private bool useIntelligentCirclePositioning = true;
     
     [Header("Area Effect Settings")]
     [SerializeField] private int circleSegments = 32;
     
-    [Header("FIXED: Improved Fade Balancing")]
-    [SerializeField] private float minFadeThreshold = 0.15f; // Punkt-Removal Schwelle
-    [SerializeField] private float fadeMinAlpha = 0.3f; // Minimum Alpha für Fade
-    [SerializeField] private float fadeZoneMinAlpha = 0.5f; // Minimum Alpha in Fade-Zone
-    [SerializeField] private int maxPointsToRemovePerFrame = 5; // Max Points pro Frame entfernen
-    [SerializeField] private bool enableSmartFading = true; // Intelligentes Fading
+    [Header("OPTIMIZED: Fade Balancing")]
+    [SerializeField] private float minFadeThreshold = 0.1f; // REDUCED für aggressiveres Cleanup
+    [SerializeField] private float fadeMinAlpha = 0.2f; // REDUCED 
+    [SerializeField] private float fadeZoneMinAlpha = 0.4f; // REDUCED
+    [SerializeField] private int maxPointsToRemovePerFrame = 8; // INCREASED
+    [SerializeField] private bool enableSmartFading = true;
     
     [Header("Advanced Features")]
     [SerializeField] private bool enableAdaptiveInterpolation = false;
@@ -104,8 +111,10 @@ public class CircleManager : MonoBehaviour
     private Vector3 tangentNormal;
     private Vector3 tangentCenter;
     
-    // Performance
+    // OPTIMIZED: Performance Tracking
     private float lastUpdateTime;
+    private int framesSinceLastCleanup = 0; // NEW: Frame-basiertes Cleanup
+    private bool needsImmediateCleanup = false; // NEW: Sofortiges Cleanup Flag
     
     // Circle Data
     private float lastConfirmedRadius;
@@ -129,24 +138,28 @@ public class CircleManager : MonoBehaviour
     {
         HandleInput();
         
-        if (enableUpdateThrottling && isDrawing && pointCount > 1 && 
-            Time.time - lastUpdateTime > updateInterval)
+        // OPTIMIZED: Sofortiges Update während Drawing, Throttling nur für Cleanup
+        if (isDrawing)
         {
-            lastUpdateTime = Time.time;
-            if (enableLengthLimit) 
+            // IMMEDIATE: Kein Throttling beim Drawing für sofortige Response
+            if (enableLengthLimit)
             {
-                UpdateAdaptiveFadeParameters(); // NEW: Update adaptive parameters
-                CleanupByLength();
+                UpdateAdaptiveFadeParameters();
+                PerformIntelligentCleanup(); // NEW: Intelligentes Cleanup
             }
         }
-        else if (!enableUpdateThrottling && isDrawing && enableLengthLimit)
+        else if (enableUpdateThrottling && Time.time - lastUpdateTime > updateInterval)
         {
-            UpdateAdaptiveFadeParameters(); // NEW: Update adaptive parameters
-            CleanupByLength();
+            // Nur außerhalb des Drawings throtteln
+            lastUpdateTime = Time.time;
+            if (enableLengthLimit && pointCount > 0)
+            {
+                PerformIntelligentCleanup();
+            }
         }
     }
     
-    #region Drawing System
+    #region OPTIMIZED: Drawing System
     
     void HandleInput()
     {
@@ -189,12 +202,13 @@ public class CircleManager : MonoBehaviour
         drawStartTime = Time.time;
         pointCount = 0;
         currentLineLength = 0f;
+        framesSinceLastCleanup = 0; // RESET cleanup counter
         
         Vector3 startPoint = useScreenSpaceCalculation ? 
             GetScreenSpaceWorldPoint() : ProjectToTangentPlane(hitPoint);
         
         AddPoint(startPoint, false);
-        TriggerPathUpdate();
+        TriggerPathUpdate(); // IMMEDIATE: Sofortige Visualisierung
     }
     
     void UpdateDrawing()
@@ -214,21 +228,21 @@ public class CircleManager : MonoBehaviour
         if (pointCount == 0)
         {
             AddPoint(worldPos, false);
-            TriggerPathUpdate();
+            TriggerPathUpdate(); // IMMEDIATE
             return;
         }
         
         float distance = Vector3.Distance(worldPos, points[pointCount - 1]);
         bool pointAdded = false;
         
-        // Adaptive Interpolation
-        if (enableAdaptiveInterpolation && distance > maxDistance)
+        // OPTIMIZED: Reduzierte Interpolation für bessere Performance
+        if (enableAdaptiveInterpolation && distance > maxDistance * 2f) // Erhöhte Schwelle
         {
             float speed = distance / Time.deltaTime;
             
             if (speed > speedThreshold)
             {
-                int interpolationSteps = Mathf.Min(maxInterpolationSteps, 
+                int interpolationSteps = Mathf.Min(2, // REDUCED von maxInterpolationSteps
                     Mathf.RoundToInt(speed / speedThreshold));
                 
                 Vector3 lastPos = points[pointCount - 1];
@@ -241,14 +255,6 @@ public class CircleManager : MonoBehaviour
                     
                     if (AddPoint(interpPos, true)) pointAdded = true;
                 }
-            }
-            else
-            {
-                Vector3 midPoint = enableSphereAwareCurves ?
-                    GetSphereAwareInterpolation(points[pointCount - 1], worldPos, 0.5f) :
-                    Vector3.Lerp(points[pointCount - 1], worldPos, 0.5f);
-                
-                if (AddPoint(midPoint, true)) pointAdded = true;
             }
             
             if (AddPoint(worldPos, false)) pointAdded = true;
@@ -267,14 +273,15 @@ public class CircleManager : MonoBehaviour
             if (AddPoint(worldPos, false)) pointAdded = true;
         }
         
+        // OPTIMIZED: Sofortiges Cleanup bei Überlauf
         if (pointCount >= cleanupThreshold)
         {
-            CleanupInterpolationStack();
+            needsImmediateCleanup = true;
         }
         
         if (pointAdded)
         {
-            TriggerPathUpdate();
+            TriggerPathUpdate(); // IMMEDIATE: Jeder neue Punkt wird sofort visualisiert
         }
     }
     
@@ -282,7 +289,10 @@ public class CircleManager : MonoBehaviour
     {
         if (pointCount >= maxPoints)
         {
-            CleanupInterpolationStack();
+            if (enableSmartCleanup)
+            {
+                PerformEmergencyCleanup(); // NEW: Notfall-Cleanup
+            }
             if (pointCount >= maxPoints) return false;
         }
         
@@ -317,7 +327,6 @@ public class CircleManager : MonoBehaviour
             ApplyAdvancedSmoothing();
         }
         
-        // NEW: Intelligente Circle-Positionierung
         Vector3 center;
         float drawnRadius;
         
@@ -363,6 +372,8 @@ public class CircleManager : MonoBehaviour
         isDrawing = false;
         pointCount = 0;
         currentLineLength = 0f;
+        framesSinceLastCleanup = 0;
+        needsImmediateCleanup = false;
         
         for (int i = 0; i < pointFadeFactors.Length; i++)
         {
@@ -374,54 +385,226 @@ public class CircleManager : MonoBehaviour
     {
         Vector3[] activePoints = new Vector3[pointCount];
         
-        if (projectVisualsToSurface && useScreenSpaceCalculation)
+        // SIMPLE OFFSET: Höher und Richtung Kamera
+        if (enableSimpleOffset)
         {
-            UpdateVisualProjection();
-            System.Array.Copy(visualPoints, activePoints, pointCount);
+            ApplySimpleOffset(activePoints);
         }
         else
         {
+            // Direkte Kopie ohne Offset
             System.Array.Copy(points, activePoints, pointCount);
         }
         
         GameEvents.TriggerPathUpdated(activePoints);
     }
     
+    void ApplySimpleOffset(Vector3[] targetArray)
+    {
+        if (!sphereCenter)
+        {
+            System.Array.Copy(points, targetArray, pointCount);
+            return;
+        }
+        
+        Vector3 spherePos = sphereCenter.position;
+        Vector3 cameraPos = cam.transform.position;
+        
+        for (int i = 0; i < pointCount; i++)
+        {
+            Vector3 point = points[i];
+            
+            // 1. Höher über Sphere (radial nach außen)
+            Vector3 directionFromSphere = (point - spherePos).normalized;
+            Vector3 heightOffsetPoint = point + directionFromSphere * heightOffset;
+            
+            // 2. Leicht Richtung Kamera
+            Vector3 directionToCamera = (cameraPos - heightOffsetPoint).normalized;
+            Vector3 finalPoint = heightOffsetPoint + directionToCamera * cameraOffset;
+            
+            targetArray[i] = finalPoint;
+        }
+    }
+    
     #endregion
     
-    #region NEW: Intelligent Circle Positioning
+    #region NEW: Intelligent Cleanup System
+    
+    void PerformIntelligentCleanup()
+    {
+        framesSinceLastCleanup++;
+        
+        // OPTIMIZED: Verschiedene Cleanup-Strategien je nach Situation
+        if (needsImmediateCleanup || framesSinceLastCleanup >= 3) // Häufigeres Cleanup
+        {
+            if (enableSmartCleanup)
+            {
+                SmartCleanupByLength();
+            }
+            else
+            {
+                CleanupByLength(); // Original-Methode
+            }
+            
+            framesSinceLastCleanup = 0;
+            needsImmediateCleanup = false;
+        }
+    }
+    
+    void SmartCleanupByLength()
+    {
+        if (currentLineLength <= maxLineLength) 
+        {
+            // Alle Punkte im erlaubten Bereich - kein Cleanup nötig
+            for (int i = 0; i < pointCount; i++)
+            {
+                pointFadeFactors[i] = 1f;
+            }
+            return;
+        }
+        
+        float fadeStartLength = maxLineLength - fadeZoneLength;
+        float runningLength = 0f;
+        int cleanupOps = 0;
+        
+        // OPTIMIZED: Begrenzte Cleanup-Operationen pro Frame
+        for (int i = 0; i < pointCount && cleanupOps < maxCleanupPerFrame; i++)
+        {
+            if (i > 0)
+            {
+                runningLength += Vector3.Distance(points[i], points[i - 1]);
+            }
+            
+            float distanceFromEnd = currentLineLength - runningLength;
+            
+            if (distanceFromEnd > maxLineLength)
+            {
+                // Aggressive Fade für weit entfernte Punkte
+                float excessDistance = distanceFromEnd - maxLineLength;
+                float fadeStrength = Mathf.Clamp01(excessDistance / fadeZoneLength);
+                
+                float targetFade = useAnimationCurve ? 
+                    fadeCurve.Evaluate(1f - fadeStrength) : 
+                    Mathf.Lerp(fadeMinAlpha, 0f, fadeStrength);
+                
+                pointFadeFactors[i] = Mathf.MoveTowards(pointFadeFactors[i], targetFade, fadeSpeed * Time.deltaTime);
+                cleanupOps++;
+            }
+            else if (distanceFromEnd > fadeStartLength)
+            {
+                // Sanfter Fade in der Fade-Zone
+                float fadePosition = (maxLineLength - distanceFromEnd) / fadeZoneLength;
+                
+                float targetFade = useAnimationCurve ?
+                    fadeCurve.Evaluate(1f - fadePosition) :
+                    Mathf.Lerp(1f, fadeZoneMinAlpha, fadePosition);
+                
+                pointFadeFactors[i] = Mathf.MoveTowards(pointFadeFactors[i], targetFade, fadeSpeed * Time.deltaTime);
+                cleanupOps++;
+            }
+            else
+            {
+                pointFadeFactors[i] = 1f;
+            }
+        }
+        
+        // Point Removal nur wenn genügend gefaded
+        RemoveInvisiblePointsSmart();
+    }
+    
+    void RemoveInvisiblePointsSmart()
+    {
+        int writeIndex = 0;
+        int removedCount = 0;
+        
+        for (int readIndex = 0; readIndex < pointCount; readIndex++)
+        {
+            if (pointFadeFactors[readIndex] > minFadeThreshold)
+            {
+                if (writeIndex != readIndex)
+                {
+                    points[writeIndex] = points[readIndex];
+                    visualPoints[writeIndex] = visualPoints[readIndex];
+                    isInterpolated[writeIndex] = isInterpolated[readIndex];
+                    pointFadeFactors[writeIndex] = pointFadeFactors[readIndex];
+                    pointArcLengths[writeIndex] = pointArcLengths[readIndex];
+                }
+                writeIndex++;
+            }
+            else
+            {
+                removedCount++;
+            }
+        }
+        
+        // OPTIMIZED: Nur entfernen wenn sinnvolle Anzahl und nicht mehr als maxPointsToRemovePerFrame
+        if (removedCount >= 2 && removedCount <= maxPointsToRemovePerFrame && writeIndex != pointCount)
+        {
+            pointCount = writeIndex;
+            RecalculateLineLength();
+        }
+    }
+    
+    void PerformEmergencyCleanup()
+    {
+        // Notfall: Entferne sofort älteste interpolierte Punkte
+        int removeCount = Mathf.Min(cleanupStackSize, pointCount / 3);
+        int removed = 0;
+        
+        for (int i = 0; i < pointCount && removed < removeCount; i++)
+        {
+            if (isInterpolated[i])
+            {
+                removed++;
+            }
+            else
+            {
+                break;
+            }
+        }
+        
+        if (removed > 0)
+        {
+            System.Array.Copy(points, removed, points, 0, pointCount - removed);
+            System.Array.Copy(visualPoints, removed, visualPoints, 0, pointCount - removed);
+            System.Array.Copy(isInterpolated, removed, isInterpolated, 0, pointCount - removed);
+            System.Array.Copy(pointFadeFactors, removed, pointFadeFactors, 0, pointCount - removed);
+            System.Array.Copy(pointArcLengths, removed, pointArcLengths, 0, pointCount - removed);
+            
+            pointCount -= removed;
+            RecalculateLineLength();
+        }
+    }
+    
+    #endregion
+    
+    #region Intelligent Circle Positioning
     
     Vector3 CalculateIntelligentCircleCenter()
     {
-        if (pointCount < 3) return points[pointCount - 1]; // Fallback: letzter Punkt
+        if (pointCount < 3) return points[pointCount - 1];
         
-        // Prüfe ob es ein linearer Pfad ist
         bool isLinear = IsLinearPath();
         
         if (isLinear)
         {
-            // Bei linearem Pfad: Verwende Linienspitze (letzter Punkt)
             Debug.Log("Linear path detected - using line tip position");
             return points[pointCount - 1];
         }
         else
         {
-            // Bei Kreisansatz: Prüfe Kreisqualität
             Vector3 geometricCenter = CalculateCenter();
             float quality = CalculateAdvancedQuality(geometricCenter);
             
             if (quality >= mediumQualityThreshold)
             {
-                // Guter Kreis: Verwende geometrischen Mittelpunkt
                 Debug.Log($"Circle detected (Quality: {quality:F2}) - using geometric center");
                 return geometricCenter;
             }
             else
             {
-                // Schlechter Kreis aber kein linearer Pfad: 
-                // Verwende gewichteten Mittelpunkt zwischen geometrischem Center und Linienspitze
                 Vector3 lineEnd = points[pointCount - 1];
-                float weight = Mathf.Clamp01(quality / mediumQualityThreshold); // 0-1 basierend auf Qualität
+                float weight = Mathf.Clamp01(quality / mediumQualityThreshold);
                 
                 Vector3 blendedCenter = Vector3.Lerp(lineEnd, geometricCenter, weight);
                 Debug.Log($"Poor circle (Quality: {quality:F2}) - using blended position (weight: {weight:F2})");
@@ -432,37 +615,30 @@ public class CircleManager : MonoBehaviour
     
     #endregion
     
-    #region FIXED: Camera-Aligned Visual Projection
+    #region Simple Visual Projection (Optional)
     
     void UpdateVisualProjection()
     {
+        // SIMPLIFIED: Nur bei explizit aktivierter Surface Projection
+        if (!projectVisualsToSurface)
+        {
+            System.Array.Copy(points, visualPoints, pointCount);
+            return;
+        }
+        
+        // Minimal surface projection ohne komplexe Stabilisierung
         for (int i = 0; i < pointCount; i++)
         {
-            if (projectVisualsToSurface)
+            Vector3 direction = (points[i] - cam.transform.position).normalized;
+            Ray ray = new Ray(cam.transform.position, direction);
+            
+            if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, sphereLayer))
             {
-                Vector3 direction = (points[i] - cam.transform.position).normalized;
-                Ray ray = new Ray(cam.transform.position, direction);
+                Vector3 offsetDirection = useCameraAlignedOffset ? 
+                    (cam.transform.position - hit.point).normalized : 
+                    hit.normal;
                 
-                if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, sphereLayer))
-                {
-                    // FIXED: Kamera-ausgerichteter Offset statt Surface Normal
-                    Vector3 offsetDirection = useCameraAlignedOffset ? 
-                        (cam.transform.position - hit.point).normalized : 
-                        hit.normal;
-                    
-                    visualPoints[i] = hit.point + offsetDirection * surfaceOffset;
-                }
-                else
-                {
-                    Vector3 projected = ProjectToTangentPlane(points[i]);
-                    
-                    // FIXED: Kamera-ausgerichteter Offset für Fallback
-                    Vector3 offsetDirection = useCameraAlignedOffset ? 
-                        (cam.transform.position - projected).normalized : 
-                        tangentNormal;
-                    
-                    visualPoints[i] = projected + offsetDirection * surfaceOffset;
-                }
+                visualPoints[i] = hit.point + offsetDirection * surfaceOffset;
             }
             else
             {
@@ -640,7 +816,7 @@ public class CircleManager : MonoBehaviour
     
     #endregion
     
-    #region Smooth Fade System
+    #region Original Cleanup System (Fallback)
     
     void CleanupByLength()
     {
@@ -661,25 +837,23 @@ public class CircleManager : MonoBehaviour
                 
                 if (distanceFromEnd > maxLineLength)
                 {
-                    // FIXED: Nur sehr aggressive Fadeout für weit entfernte Punkte
                     float excessDistance = distanceFromEnd - maxLineLength;
-                    float fadeStrength = Mathf.Clamp01(excessDistance / (fadeZoneLength * 2f)); // Langsamerer Fade
+                    float fadeStrength = Mathf.Clamp01(excessDistance / (fadeZoneLength * 2f));
                     
                     float targetFade = useAnimationCurve ? 
                         fadeCurve.Evaluate(1f - fadeStrength) : 
-                        Mathf.Lerp(fadeMinAlpha, 0f, fadeStrength); // FIXED: Min fadeMinAlpha statt 0f
+                        Mathf.Lerp(fadeMinAlpha, 0f, fadeStrength);
                     
                     pointFadeFactors[i] = Mathf.MoveTowards(pointFadeFactors[i], targetFade, fadeSpeed * Time.deltaTime);
                     anyFaded = true;
                 }
                 else if (distanceFromEnd > fadeStartLength)
                 {
-                    // FIXED: Sanfter Fade in der Fade-Zone
                     float fadePosition = (maxLineLength - distanceFromEnd) / fadeZoneLength;
                     
                     float targetFade = useAnimationCurve ?
                         fadeCurve.Evaluate(1f - fadePosition) :
-                        Mathf.Lerp(1f, fadeZoneMinAlpha, fadePosition); // FIXED: Min fadeZoneMinAlpha statt 0.1f
+                        Mathf.Lerp(1f, fadeZoneMinAlpha, fadePosition);
                     
                     pointFadeFactors[i] = Mathf.MoveTowards(pointFadeFactors[i], targetFade, fadeSpeed * Time.deltaTime);
                     anyFaded = true;
@@ -690,7 +864,6 @@ public class CircleManager : MonoBehaviour
                 }
             }
             
-            // FIXED: Weniger aggressive Point-Removal
             if (anyFaded)
             {
                 RemoveInvisiblePointsSmooth();
@@ -705,14 +878,12 @@ public class CircleManager : MonoBehaviour
         }
     }
     
-    // FIXED: Sanftere Point-Removal Logik
     void RemoveInvisiblePointsSmooth()
     {
         int writeIndex = 0;
         
         for (int readIndex = 0; readIndex < pointCount; readIndex++)
         {
-            // FIXED: Konfigurierbare Schwelle für Point-Removal
             if (pointFadeFactors[readIndex] > minFadeThreshold)
             {
                 if (writeIndex != readIndex)
@@ -727,7 +898,6 @@ public class CircleManager : MonoBehaviour
             }
         }
         
-        // FIXED: Nur entfernen wenn signifikante Anzahl gefaded und nicht mehr als maxPointsToRemovePerFrame
         int pointsToRemove = pointCount - writeIndex;
         if (writeIndex != pointCount && pointsToRemove >= 3 && pointsToRemove <= maxPointsToRemovePerFrame)
         {
@@ -736,14 +906,11 @@ public class CircleManager : MonoBehaviour
         }
     }
     
-    // FIXED: Intelligentere Interpolation Stack Cleanup
     void CleanupInterpolationStack()
     {
-        // FIXED: Weniger aggressive Cleanup-Größe
         int removeCount = Mathf.Min(cleanupStackSize / 2, pointCount / 4, maxPointsToRemovePerFrame);
         int removed = 0;
         
-        // FIXED: Nur interpolierte Punkte bevorzugt entfernen
         for (int i = 0; i < pointCount && removed < removeCount; i++)
         {
             if (isInterpolated[i])
@@ -752,7 +919,7 @@ public class CircleManager : MonoBehaviour
             }
             else
             {
-                break; // Stop bei ersten nicht-interpolierten Punkt
+                break;
             }
         }
         
@@ -769,30 +936,27 @@ public class CircleManager : MonoBehaviour
         }
     }
     
-    // FIXED: Adaptive Fade-Parameter basierend auf Drawing-Speed
     void UpdateAdaptiveFadeParameters()
     {
         if (!enableSmartFading) return;
         
-        // Berechne Drawing-Geschwindigkeit
         float drawingTime = Time.time - drawStartTime;
         float averageSpeed = currentLineLength / Mathf.Max(drawingTime, 0.1f);
         
-        // FIXED: Langsamere Drawings = sanfteres Fading
-        if (averageSpeed < 2f) // Langsam
+        if (averageSpeed < 2f)
         {
-            fadeSpeed = 2f; // Langsamer Fade
-            minFadeThreshold = 0.2f; // Höhere Schwelle
+            fadeSpeed = 4f; // INCREASED für bessere Response
+            minFadeThreshold = 0.15f;
         }
-        else if (averageSpeed > 8f) // Schnell
+        else if (averageSpeed > 8f)
         {
-            fadeSpeed = 5f; // Schneller Fade
-            minFadeThreshold = 0.1f; // Niedrigere Schwelle
+            fadeSpeed = 10f; // INCREASED für bessere Response
+            minFadeThreshold = 0.05f;
         }
         else
         {
-            fadeSpeed = 3f; // Normal
-            minFadeThreshold = 0.15f; // Standard
+            fadeSpeed = 8f; // INCREASED für bessere Response
+            minFadeThreshold = 0.1f;
         }
     }
     
@@ -813,7 +977,6 @@ public class CircleManager : MonoBehaviour
             pointArcLengths[0] = 0f;
         }
     }
-    
     
     #region Circle Mathematics
     
@@ -950,7 +1113,7 @@ public class CircleManager : MonoBehaviour
         }
         
         float linearRatio = (float)linearPoints / (pointCount - 2);
-        return linearRatio > linearPathThreshold; // FIXED: Verwende konfigurierbare Schwelle
+        return linearRatio > linearPathThreshold;
     }
     
     string GetQualityText(float quality)
@@ -1037,6 +1200,22 @@ public class CircleManager : MonoBehaviour
     public bool IsCurrentlyDrawing() => isDrawing;
     public bool HasValidCircle() => lastConfirmedRadius > 0f;
     
+    // OPTIMIZED: Performance Settings
+    public void SetImmediateModeEnabled(bool enabled) 
+    {
+        enableUpdateThrottling = !enabled;
+        enableSmartCleanup = enabled;
+        if (enabled)
+        {
+            fadeSpeed = 8f;
+            maxPointsToRemovePerFrame = 8;
+            minFadeThreshold = 0.1f;
+        }
+    }
+    
+    public void SetSmartCleanup(bool enabled) => enableSmartCleanup = enabled;
+    public void SetMaxCleanupPerFrame(int max) => maxCleanupPerFrame = Mathf.Max(1, max);
+    
     // Settings API
     public void SetMaxLineLength(float length) => maxLineLength = length;
     public void SetStrictClosureMode(bool enabled) => enableQualityScaling = enabled;
@@ -1054,7 +1233,7 @@ public class CircleManager : MonoBehaviour
     public void SetProjectVisualsToSurface(bool enabled) => projectVisualsToSurface = enabled;
     public void SetSurfaceOffset(float offset) => surfaceOffset = offset;
     
-    // NEW: Visual Offset Settings
+    // Visual Offset Settings
     public void SetCameraAlignedOffset(bool enabled) => useCameraAlignedOffset = enabled;
     
     // Circle Positioning Settings
@@ -1068,14 +1247,19 @@ public class CircleManager : MonoBehaviour
     public void SetSphereAwareCurves(bool enabled) => enableSphereAwareCurves = enabled;
     public void SetSphereRadius(float radius) => sphereRadius = radius;
     
-    // NEW: Fade System Balancing API
+    // Fade System Balancing API
     public void SetFadeMinThreshold(float threshold) => minFadeThreshold = Mathf.Clamp01(threshold);
     public void SetFadeMinAlpha(float alpha) => fadeMinAlpha = Mathf.Clamp01(alpha);
     public void SetFadeZoneMinAlpha(float alpha) => fadeZoneMinAlpha = Mathf.Clamp01(alpha);
     public void SetMaxPointsToRemovePerFrame(int maxPoints) => maxPointsToRemovePerFrame = Mathf.Max(1, maxPoints);
     public void SetSmartFading(bool enabled) => enableSmartFading = enabled;
     
-    // NEW: Fade System Status
+    // NEW: Simple Offset API
+    public void SetSimpleOffset(bool enabled) => enableSimpleOffset = enabled;
+    public void SetHeightOffset(float offset) => heightOffset = Mathf.Max(0f, offset);
+    public void SetCameraOffset(float offset) => cameraOffset = Mathf.Max(0f, offset);
+    
+    // Fade System Status
     public float GetCurrentFadeThreshold() => minFadeThreshold;
     public float GetAverageFadeLevel()
     {
@@ -1089,7 +1273,7 @@ public class CircleManager : MonoBehaviour
         return totalFade / pointCount;
     }
     
-    // NEW: Debug Fade Status
+    // Debug Fade Status
     public string GetFadeDebugInfo()
     {
         int fadedPoints = 0;
@@ -1114,6 +1298,20 @@ public class CircleManager : MonoBehaviour
     
     #region Debug Tools
     
+    [ContextMenu("Enable Immediate Mode")]
+    void EnableImmediateMode()
+    {
+        SetImmediateModeEnabled(true);
+        Debug.Log("Immediate Mode ENABLED - Lines should appear instantly");
+    }
+    
+    [ContextMenu("Disable Surface Projection")]
+    void DisableSurfaceProjection()
+    {
+        projectVisualsToSurface = false;
+        Debug.Log("Surface Projection DISABLED - No more jumping!");
+    }
+    
     [ContextMenu("Test Circle Quality")]
     void TestCircleQuality()
     {
@@ -1134,7 +1332,8 @@ public class CircleManager : MonoBehaviour
                      $"\nQuality: {qualityText} ({quality:F2})" +
                      $"\nIs Linear: {isLinear}" +
                      $"\nLine Length: {currentLineLength:F2}/{maxLineLength:F2}" +
-                     $"\nSmoothing: {enableCatmullRom}" +
+                     $"\nImmediate Mode: {!enableUpdateThrottling}" +
+                     $"\nSmart Cleanup: {enableSmartCleanup}" +
                      $"\nThrottling: {enableUpdateThrottling}" +
                      $"\nScreen Space: {useScreenSpaceCalculation}" +
                      $"\nSurface Offset: {surfaceOffset:F3}" +
@@ -1156,7 +1355,8 @@ public class CircleManager : MonoBehaviour
         Debug.Log($"Performance Settings:" +
                  $"\nThrottling: {enableUpdateThrottling}" +
                  $"\nSmoothing: {enableCatmullRom}" +
-                 $"\nCurve Fading: {useAnimationCurve}");
+                 $"\nCurve Fading: {useAnimationCurve}" +
+                 $"\nImmediate Mode: {!enableUpdateThrottling}");
     }
     
     [ContextMenu("Toggle Visual Settings")]
@@ -1169,6 +1369,20 @@ public class CircleManager : MonoBehaviour
                  $"\nCamera Aligned Offset: {useCameraAlignedOffset}" +
                  $"\nIntelligent Circle Positioning: {useIntelligentCirclePositioning}" +
                  $"\nLinear Path Threshold: {linearPathThreshold:F2}");
+    }
+    
+    [ContextMenu("Debug Performance")]
+    void DebugPerformance()
+    {
+        Debug.Log($"Performance Debug:" +
+                 $"\nUpdate Throttling: {enableUpdateThrottling}" +
+                 $"\nSmart Cleanup: {enableSmartCleanup}" +
+                 $"\nMax Cleanup/Frame: {maxCleanupPerFrame}" +
+                 $"\nFrames Since Cleanup: {framesSinceLastCleanup}" +
+                 $"\nNeeds Immediate Cleanup: {needsImmediateCleanup}" +
+                 $"\nFade Speed: {fadeSpeed}" +
+                 $"\nCurrent Points: {pointCount}/{maxPoints}" +
+                 $"\nCleanup Threshold: {cleanupThreshold}");
     }
     
     [ContextMenu("Debug Fade System")]
@@ -1184,17 +1398,18 @@ public class CircleManager : MonoBehaviour
                  $"\nFade Zone Min Alpha: {fadeZoneMinAlpha:F2}");
     }
     
-    [ContextMenu("Reset Fade Parameters")]
-    void ResetFadeParameters()
+    [ContextMenu("Reset to Immediate Mode")]
+    void ResetToImmediateMode()
     {
-        minFadeThreshold = 0.15f;
-        fadeMinAlpha = 0.3f;
-        fadeZoneMinAlpha = 0.5f;
-        maxPointsToRemovePerFrame = 5;
-        enableSmartFading = true;
-        fadeSpeed = 3f;
+        enableUpdateThrottling = false;
+        enableSmartCleanup = true;
+        fadeSpeed = 8f;
+        maxPointsToRemovePerFrame = 8;
+        minFadeThreshold = 0.1f;
+        maxCleanupPerFrame = 3;
+        updateInterval = 0.016f;
         
-        Debug.Log("Fade parameters reset to default values");
+        Debug.Log("Reset to Immediate Mode - Lines should appear instantly");
     }
     
     #endregion
