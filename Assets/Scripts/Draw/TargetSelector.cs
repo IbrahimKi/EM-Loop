@@ -95,7 +95,7 @@ public class TargetSelector : MonoBehaviour
         }
         
         // Enemy priority
-        if (target.GetComponent<RhythmEnemyController>() != null)
+        if (target.GetComponent<EnemyController>() != null)
         {
             score += 1f;
         }

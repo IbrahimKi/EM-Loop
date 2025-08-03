@@ -168,10 +168,6 @@ public class GlobalRhythmManager : MonoBehaviour
         OnStateChanged?.Invoke(currentState);
         OnFrameChanged?.Invoke(currentFrame);
         
-        // Update static RhythmManager for backwards compatibility
-        RhythmManager.OnBeatTick?.Invoke(currentFrame);
-        RhythmManager.OnStateChanged?.Invoke(currentState);
-        
         LogDebug($"Beat: Frame {currentFrame} ({currentState})");
     }
     
@@ -300,29 +296,4 @@ public class GlobalRhythmManager : MonoBehaviour
     void DebugTriggerBeat() => TriggerBeat();
     
     #endregion
-}
-
-/// <summary>
-/// Static wrapper für backwards compatibility
-/// </summary>
-public static class RhythmManager
-{
-    public static System.Action<int> OnBeatTick;
-    public static System.Action<EnemyRhythmState> OnStateChanged;
-    
-    public static void TriggerBeat(int frame)
-    {
-        OnBeatTick?.Invoke(frame);
-        OnStateChanged?.Invoke((EnemyRhythmState)frame);
-    }
-    
-    public static int GetCurrentFrame()
-    {
-        return GlobalRhythmManager.Instance?.GetCurrentFrame() ?? 0;
-    }
-    
-    public static bool IsRunning()
-    {
-        return GlobalRhythmManager.Instance?.IsRunning() ?? false;
-    }
 }

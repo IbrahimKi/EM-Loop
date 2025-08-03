@@ -2,26 +2,23 @@ using UnityEngine;
 using System.Collections;
 
 /// <summary>
-/// Dash AOE Executor - Führt Dash zum Target und AOE Damage aus
+/// Simplified Dash AOE Executor - One-Hit Energy System
+/// Circle-based targeting mit player movement und AOE damage
 /// </summary>
-[RequireComponent(typeof(PlayerMovement))]
 public class DashAOEExecutor : MonoBehaviour
 {
     [Header("Dash Settings")]
     [SerializeField] private float dashDuration = 0.4f;
     [SerializeField] private LeanTweenType dashEase = LeanTweenType.easeInOutQuad;
     [SerializeField] private float dashArcHeight = 1f;
-    [SerializeField] private float previewTime = 0.2f;
     
     [Header("AOE Settings")]
-    [SerializeField] private float baseAOERadius = 2f;
-    [SerializeField] private float baseDamage = 50f;
-    [SerializeField] private LayerMask damageLayer = -1;
-    [SerializeField] private float aoeDelay = 0.1f; // After landing
+    [SerializeField] private float baseAOERadius = 3f;
+    [SerializeField] private LayerMask enemyLayer = -1;
+    [SerializeField] private float aoeDelay = 0.1f;
     
     [Header("Quality Scaling")]
-    [SerializeField] private AnimationCurve radiusQualityCurve = AnimationCurve.Linear(0, 0.5f, 1, 1.5f);
-    [SerializeField] private AnimationCurve damageQualityCurve = AnimationCurve.Linear(0, 0.5f, 1, 2f);
+    [SerializeField] private AnimationCurve radiusQualityCurve = AnimationCurve.Linear(0, 0.7f, 1, 1.5f);
     
     [Header("Visual Effects")]
     [SerializeField] private GameObject dashTrailPrefab;
@@ -32,16 +29,15 @@ public class DashAOEExecutor : MonoBehaviour
     [SerializeField] private Transform sphereCenter;
     
     // Components
-    private PlayerMovement playerMovement;
+    private SimplePlayerController playerController;
     
     // State
     private bool isDashing;
     private int dashTweenId = -1;
-    private float lastQuality;
     
     void Awake()
     {
-        playerMovement = GetComponent<PlayerMovement>();
+        playerController = GetComponent<SimplePlayerController>();
         
         if (!sphereCenter)
         {
@@ -52,33 +48,40 @@ public class DashAOEExecutor : MonoBehaviour
     
     void OnEnable()
     {
-        TargetSelector.OnTargetSelected += ExecuteDashToTarget;
-        TargetSelector.OnNoTargetFound += ShowNoTargetFeedback;
+        // Subscribe to circle confirmation instead of target selection
+        GameEvents.OnCircleConfirmed += OnCircleConfirmed;
     }
     
     void OnDisable()
     {
-        TargetSelector.OnTargetSelected -= ExecuteDashToTarget;
-        TargetSelector.OnNoTargetFound -= ShowNoTargetFeedback;
+        GameEvents.OnCircleConfirmed -= OnCircleConfirmed;
         
         if (dashTweenId >= 0) LeanTween.cancel(dashTweenId);
     }
     
-    void ExecuteDashToTarget(GameObject target, Vector3 circleCenter, float quality)
+    void OnCircleConfirmed(Vector3 center, float radius, Vector3 normal)
     {
-        if (isDashing || target == null) return;
+        if (isDashing || !playerController.IsAlive()) return;
         
-        lastQuality = quality;
-        Vector3 targetPos = GetTargetPositionOnSphere(target.transform.position);
+        // No energy cost for dash - dash is always available
+        Vector3 targetPos = GetTargetPositionOnSphere(center);
+        float quality = CalculateCircleQuality(radius);
         
         StartCoroutine(DashSequence(targetPos, quality));
+    }
+    
+    float CalculateCircleQuality(float radius)
+    {
+        // Simple quality: optimal radius = 3f, quality decreases with distance from optimal
+        float optimalRadius = 3f;
+        float deviation = Mathf.Abs(radius - optimalRadius) / optimalRadius;
+        return Mathf.Clamp01(1f - deviation);
     }
     
     Vector3 GetTargetPositionOnSphere(Vector3 targetWorldPos)
     {
         if (!sphereCenter) return targetWorldPos;
         
-        // Project target position to sphere surface
         Vector3 toTarget = targetWorldPos - sphereCenter.position;
         float sphereRadius = Vector3.Distance(transform.position, sphereCenter.position);
         
@@ -88,12 +91,6 @@ public class DashAOEExecutor : MonoBehaviour
     IEnumerator DashSequence(Vector3 targetPos, float quality)
     {
         isDashing = true;
-        
-        // Disable player control
-        if (playerMovement) playerMovement.enabled = false;
-        
-        // Show preview
-        yield return new WaitForSeconds(previewTime);
         
         // Create trail
         GameObject trail = null;
@@ -136,9 +133,6 @@ public class DashAOEExecutor : MonoBehaviour
         // Execute AOE
         ExecuteAOE(quality);
         
-        // Re-enable player control
-        if (playerMovement) playerMovement.enabled = true;
-        
         isDashing = false;
         dashTweenId = -1;
         
@@ -150,13 +144,12 @@ public class DashAOEExecutor : MonoBehaviour
     {
         if (!sphereCenter)
         {
-            // Simple arc without sphere
             Vector3 mid = (start + end) * 0.5f + Vector3.up * dashArcHeight;
             return new Vector3[] { start, mid, end };
         }
         
         // Path along sphere surface with arc
-        int segments = 8;
+        int segments = 6; // Reduced for performance
         Vector3[] path = new Vector3[segments + 1];
         
         Vector3 spherePos = sphereCenter.position;
@@ -166,12 +159,10 @@ public class DashAOEExecutor : MonoBehaviour
         {
             float t = (float)i / segments;
             
-            // Interpolate on sphere
             Vector3 startDir = (start - spherePos).normalized;
             Vector3 endDir = (end - spherePos).normalized;
             Vector3 currentDir = Vector3.Slerp(startDir, endDir, t);
             
-            // Add arc height
             float arcMultiplier = Mathf.Sin(t * Mathf.PI) * dashArcHeight;
             float currentRadius = sphereRadius + arcMultiplier;
             
@@ -183,9 +174,8 @@ public class DashAOEExecutor : MonoBehaviour
     
     void ExecuteAOE(float quality)
     {
-        // Calculate scaled values
+        // Calculate scaled radius
         float finalRadius = baseAOERadius * radiusQualityCurve.Evaluate(quality);
-        float finalDamage = baseDamage * damageQualityCurve.Evaluate(quality);
         
         // Visual effect
         if (aoeEffectPrefab)
@@ -195,45 +185,35 @@ public class DashAOEExecutor : MonoBehaviour
             Destroy(effect, 2f);
         }
         
-        // Find targets
-        Collider[] targets = Physics.OverlapSphere(transform.position, finalRadius, damageLayer);
-        int hitCount = 0;
+        // Find enemies
+        Collider[] targets = Physics.OverlapSphere(transform.position, finalRadius, enemyLayer);
+        int enemiesHit = 0;
         
         foreach (var target in targets)
         {
-            // Skip self
             if (target.transform == transform) continue;
             
-            // Try to damage
-            var damageable = target.GetComponent<IDamageable>();
-            if (damageable != null && damageable.IsAlive())
+            // Check for enemy
+            var enemy = target.GetComponent<EnemyController>();
+            if (enemy != null && enemy.IsAlive())
             {
-                damageable.TakeDamage(finalDamage);
-                hitCount++;
+                // One-hit kill all enemies in AOE
+                enemy.TakeDamage(9999f); // Instant kill
+                enemiesHit++;
             }
         }
         
         // Trigger event
-        GameEvents.TriggerAreaDamageDealt(transform.position, finalRadius, hitCount);
+        GameEvents.TriggerAreaDamageDealt(transform.position, finalRadius, enemiesHit);
         
-        Debug.Log($"AOE: {hitCount} targets hit | Radius: {finalRadius:F1} | Damage: {finalDamage:F0} | Quality: {quality:F2}");
-    }
-    
-    void ShowNoTargetFeedback(Vector3 center, float radius)
-    {
-        Debug.Log("No valid target found in circle!");
-        // Could show visual feedback here
+        Debug.Log($"Dash AOE: {enemiesHit} enemies destroyed | Radius: {finalRadius:F1} | Quality: {quality:F2}");
     }
     
     // Public API
     public bool IsDashing => isDashing;
-    public float GetLastQuality => lastQuality;
-    
     public void SetDashDuration(float duration) => dashDuration = Mathf.Max(0.1f, duration);
     public void SetBaseAOERadius(float radius) => baseAOERadius = Mathf.Max(0.5f, radius);
-    public void SetBaseDamage(float damage) => baseDamage = Mathf.Max(1f, damage);
     
-    // Force cancel dash
     public void CancelDash()
     {
         if (isDashing && dashTweenId >= 0)
@@ -241,14 +221,6 @@ public class DashAOEExecutor : MonoBehaviour
             LeanTween.cancel(dashTweenId);
             StopAllCoroutines();
             isDashing = false;
-            
-            if (playerMovement) playerMovement.enabled = true;
         }
     }
-}
-
-// Placeholder for player movement
-public class PlayerMovement : MonoBehaviour
-{
-    // Your existing player movement code
 }

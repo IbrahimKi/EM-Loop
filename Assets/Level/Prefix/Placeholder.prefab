@@ -9,12 +9,11 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2280546813830132742}
+  - component: {fileID: 675030690396545266}
   - component: {fileID: 6683781400767797731}
   - component: {fileID: 8823069214514098026}
-  - component: {fileID: 4500030075603104282}
   - component: {fileID: 4296985624671942814}
   - component: {fileID: 1398640964512679043}
-  - component: {fileID: 3940154740340514975}
   m_Layer: 8
   m_Name: Placeholder
   m_TagString: Untagged
@@ -32,11 +31,35 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0.47075516, z: -0.21291794}
-  m_LocalScale: {x: 0.2, y: 0.2, z: 1}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &675030690396545266
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4070676540000857483}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 53698243a6a7e0249bac20b18468de92, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  enemyData: {fileID: 11400000, guid: 3e8c3bb6fccbe544f81ee1e9327f131d, type: 2}
+  startInDangerState: 0
+  currentState: 0
+  currentHealth: 0
+  isAlive: 1
+  currentFrame: 0
+  attackCycleCounter: 0
+  isDangerState: 0
+  playerLayer:
+    serializedVersion: 2
+    m_Bits: 8
+  enableDebugLogs: 0
 --- !u!114 &6683781400767797731
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -66,33 +89,6 @@ MonoBehaviour:
   destroyOnDeath: 1
   damageColor: {r: 1, g: 0, b: 0, a: 1}
   flashDuration: 0.1
---- !u!114 &4500030075603104282
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4070676540000857483}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 93ec89cc297fecc44b31508fa4dec186, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  idleFrameDuration: 1
-  windupFrameDuration: 1
-  attackFrameDuration: 1
-  loopAnimation: 1
-  attackRadius: 2
-  attackDamage: 25
-  playerLayer:
-    serializedVersion: 2
-    m_Bits: 8
-  resourceValue: 10
-  resourceType: 0
-  idleColor: {r: 1, g: 1, b: 1, a: 1}
-  windupColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  attackColor: {r: 1, g: 0, b: 0, a: 1}
-  attackEffect: {fileID: 0}
 --- !u!212 &4296985624671942814
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -137,7 +133,7 @@ SpriteRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
-  m_Sprite: {fileID: 21300000, guid: b681bd26e997193418786a15de4a57e4, type: 3}
+  m_Sprite: {fileID: 2109266824, guid: d99f034d50402c04e9dbb53c8f3392dd, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -166,26 +162,3 @@ MonoBehaviour:
   detectionRadius: 1
   selectionEffect: {fileID: 0}
   highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
---- !u!136 &3940154740340514975
-CapsuleCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4070676540000857483}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 2
-  m_Radius: 0.025
-  m_Height: 0
-  m_Direction: 1
-  m_Center: {x: 0, y: 0, z: 0}

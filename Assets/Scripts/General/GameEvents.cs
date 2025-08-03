@@ -18,17 +18,15 @@ public static class GameEvents
     public static event Action<CircleTarget, Vector3, float> OnTargetSelected;
     public static event Action<Vector3, float, int> OnAreaDamageDealt;
     
-    // Player Events
+    // Player Events - Simplified for One-Hit System
+    public static event Action OnPlayerHit;
+    public static event Action<int> OnPlayerEnergyChanged;
+    
     public static event Action<Vector3> OnDashStarted;
     public static event Action<Vector3> OnDashCompleted;
-    public static event Action<int, float> OnCircleStatsUpdated;
-    public static event Action<float, int> OnDamageDealt;
-    public static event Action<int, int, int> OnExperienceGained;
-    public static event Action<int> OnPlayerLevelUp;
     
-    // Enemy Events
-    public static event Action<EnemyController, float, int> OnEnemyAttacked;
-    public static event Action<EnemyController, int, ResourceType> OnEnemyDestroyed;
+    // Enemy Events - Simplified
+    public static event Action<EnemyController, int> OnEnemyDestroyed; // enemy, energyValue
     
     // Visual Events
     public static event Action<float> OnRadiusChanged;
@@ -57,31 +55,23 @@ public static class GameEvents
     public static void TriggerAreaDamageDealt(Vector3 position, float radius, int targetCount)
         => OnAreaDamageDealt?.Invoke(position, radius, targetCount);
     
-    // Player Events
+    // Player Events - Simplified
+    public static void TriggerPlayerHit()
+        => OnPlayerHit?.Invoke();
+    
+    public static void TriggerPlayerEnergyChanged(int newEnergy)
+        => OnPlayerEnergyChanged?.Invoke(newEnergy);
+    
+    // Trigger Methods:
     public static void TriggerDashStarted(Vector3 targetPos)
         => OnDashStarted?.Invoke(targetPos);
-    
+
     public static void TriggerDashCompleted(Vector3 targetPos)
         => OnDashCompleted?.Invoke(targetPos);
     
-    public static void TriggerCircleStatsUpdated(int count, float avgQuality)
-        => OnCircleStatsUpdated?.Invoke(count, avgQuality);
-    
-    public static void TriggerDamageDealt(float damage, int targets)
-        => OnDamageDealt?.Invoke(damage, targets);
-    
-    public static void TriggerExperienceGained(int gained, int current, int toNext)
-        => OnExperienceGained?.Invoke(gained, current, toNext);
-    
-    public static void TriggerPlayerLevelUp(int newLevel)
-        => OnPlayerLevelUp?.Invoke(newLevel);
-    
-    // Enemy Events
-    public static void TriggerEnemyAttacked(EnemyController enemy, float damage, int targetsHit)
-        => OnEnemyAttacked?.Invoke(enemy, damage, targetsHit);
-    
-    public static void TriggerEnemyDestroyed(EnemyController enemy, int value, ResourceType type)
-        => OnEnemyDestroyed?.Invoke(enemy, value, type);
+    // Enemy Events - Simplified
+    public static void TriggerEnemyDestroyed(EnemyController enemy, int energyValue)
+        => OnEnemyDestroyed?.Invoke(enemy, energyValue);
     
     // Visual Events
     public static void TriggerRadiusChanged(float radius)
@@ -123,13 +113,8 @@ public static class GameEvents
         OnDrawingCancelled = null;
         OnTargetSelected = null;
         OnAreaDamageDealt = null;
-        OnDashStarted = null;
-        OnDashCompleted = null;
-        OnCircleStatsUpdated = null;
-        OnDamageDealt = null;
-        OnExperienceGained = null;
-        OnPlayerLevelUp = null;
-        OnEnemyAttacked = null;
+        OnPlayerHit = null;
+        OnPlayerEnergyChanged = null;
         OnEnemyDestroyed = null;
         OnRadiusChanged = null;
         OnSegmentsChanged = null;
@@ -149,8 +134,9 @@ public static class GameEvents
             ["CircleWithQuality"] = OnCircleConfirmedWithQuality?.GetInvocationList().Length ?? 0,
             ["PathUpdated"] = OnPathUpdated?.GetInvocationList().Length ?? 0,
             ["TargetSelected"] = OnTargetSelected?.GetInvocationList().Length ?? 0,
-            ["DashStarted"] = OnDashStarted?.GetInvocationList().Length ?? 0,
-            ["PlayerLevelUp"] = OnPlayerLevelUp?.GetInvocationList().Length ?? 0
+            ["PlayerHit"] = OnPlayerHit?.GetInvocationList().Length ?? 0,
+            ["PlayerEnergy"] = OnPlayerEnergyChanged?.GetInvocationList().Length ?? 0,
+            ["EnemyDestroyed"] = OnEnemyDestroyed?.GetInvocationList().Length ?? 0
         };
         
         foreach (var stat in stats)
@@ -215,14 +201,18 @@ public class ExampleUsage : MonoBehaviour
     {
         // Subscribe
         GameEvents.OnCircleConfirmed += HandleCircleConfirmed;
-        GameEvents.OnPlayerLevelUp += HandleLevelUp;
+        GameEvents.OnPlayerHit += HandlePlayerHit;
+        GameEvents.OnPlayerEnergyChanged += HandleEnergyChanged;
+        GameEvents.OnEnemyDestroyed += HandleEnemyDestroyed;
     }
     
     void OnDestroy()
     {
         // Unsubscribe (wichtig für Memory-Safety)
         GameEvents.OnCircleConfirmed -= HandleCircleConfirmed;
-        GameEvents.OnPlayerLevelUp -= HandleLevelUp;
+        GameEvents.OnPlayerHit -= HandlePlayerHit;
+        GameEvents.OnPlayerEnergyChanged -= HandleEnergyChanged;
+        GameEvents.OnEnemyDestroyed -= HandleEnemyDestroyed;
     }
     
     void HandleCircleConfirmed(Vector3 center, float radius, Vector3 normal)
@@ -230,15 +220,26 @@ public class ExampleUsage : MonoBehaviour
         Debug.Log($"Circle at {center} with radius {radius}");
     }
     
-    void HandleLevelUp(int newLevel)
+    void HandlePlayerHit()
     {
-        Debug.Log($"Player reached level {newLevel}!");
+        Debug.Log("Player got hit - one shot!");
+    }
+    
+    void HandleEnergyChanged(int newEnergy)
+    {
+        Debug.Log($"Player energy: {newEnergy}");
+    }
+    
+    void HandleEnemyDestroyed(EnemyController enemy, int energyValue)
+    {
+        Debug.Log($"Enemy destroyed, gained {energyValue} energy!");
     }
     
     void TestTriggerEvents()
     {
         // Trigger Events
         GameEvents.TriggerCircleConfirmed(Vector3.zero, 5f, Vector3.up);
-        GameEvents.TriggerPlayerLevelUp(2);
+        GameEvents.TriggerPlayerHit();
+        GameEvents.TriggerPlayerEnergyChanged(75);
     }
 }

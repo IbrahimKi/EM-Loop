@@ -20,6 +20,9 @@ public class SphereLevelManager : MonoBehaviour
     [SerializeField, ReadOnly] private int totalRotations = 0;
     [SerializeField, ReadOnly] private int enemiesRemaining = 0;
     
+    [Header("Progression Settings")]
+    [SerializeField] private bool enableProgressionScaling = true;
+    [SerializeField] private int rotationsForDangerEnemies = 3; // Nach X Rotationen = Danger Enemies
     [Header("Debug")]
     [SerializeField] private bool enableDebugLogs = true;
     [SerializeField] private bool showAreaGizmos = true;
@@ -29,7 +32,7 @@ public class SphereLevelManager : MonoBehaviour
     private Coroutine areaTransitionCoroutine;
     
     // Simple enemy tracking
-    private List<RhythmEnemyController> activeEnemies = new List<RhythmEnemyController>();
+    private List<EnemyController> activeEnemies = new List<EnemyController>();
     
     // Planet Loop Events
     public static System.Action<int, PlanetAreaData> OnAreaLoaded;
@@ -191,6 +194,9 @@ public class SphereLevelManager : MonoBehaviour
             return;
         }
         
+        // Check if enemies should start in danger state based on progression
+        bool shouldStartInDanger = ShouldEnemiesStartInDanger();
+        
         // Simple direct spawning
         for (int i = 0; i < area.enemyPrefabs.Length; i++)
         {
@@ -199,10 +205,17 @@ public class SphereLevelManager : MonoBehaviour
             Vector3 spawnPos = GetSpawnPosition(i, area);
             GameObject enemyGO = Instantiate(area.enemyPrefabs[i], spawnPos, Quaternion.identity, enemyParent);
             
-            // Get rhythm enemy controller
-            var enemyController = enemyGO.GetComponent<RhythmEnemyController>();
+            // Get enemy controller
+            var enemyController = enemyGO.GetComponent<EnemyController>();
             if (enemyController != null)
             {
+                // Apply progression scaling
+                if (shouldStartInDanger && enemyController.GetEnemySize() == EnemySize.Large)
+                {
+                    enemyController.SetStartInDangerState(true);
+                    LogDebug($"Large enemy spawned in DANGER STATE (rotation {totalRotations})");
+                }
+                
                 activeEnemies.Add(enemyController);
             }
         }
@@ -210,7 +223,15 @@ public class SphereLevelManager : MonoBehaviour
         enemiesRemaining = activeEnemies.Count;
         OnEnemyCountChanged?.Invoke(enemiesRemaining);
         
-        LogDebug($"Spawned {activeEnemies.Count} enemies for area {currentAreaIndex}");
+        LogDebug($"Spawned {activeEnemies.Count} enemies for area {currentAreaIndex}" + 
+                (shouldStartInDanger ? " (DANGER MODE)" : ""));
+    }
+    
+    bool ShouldEnemiesStartInDanger()
+    {
+        if (!enableProgressionScaling) return false;
+        
+        return totalRotations >= rotationsForDangerEnemies;
     }
     
     Vector3 GetSpawnPosition(int enemyIndex, PlanetAreaData area)
@@ -250,19 +271,19 @@ public class SphereLevelManager : MonoBehaviour
     
     #region Event Handlers
     
-    void OnEnemyDestroyed(EnemyController enemy, int value, ResourceType type)
+    void OnEnemyDestroyed(EnemyController enemy, int energyValue)
     {
         if (currentState != AreaState.Active) return;
         
-        // Handle rhythm enemy controller specifically
-        var rhythmEnemy = enemy as RhythmEnemyController;
-        if (rhythmEnemy != null && activeEnemies.Contains(rhythmEnemy))
+        // Handle enemy controller specifically
+        var _enemy = enemy as EnemyController;
+        if (_enemy != null && activeEnemies.Contains(enemy))
         {
-            activeEnemies.Remove(rhythmEnemy);
+            activeEnemies.Remove(enemy);
             enemiesRemaining = activeEnemies.Count;
             OnEnemyCountChanged?.Invoke(enemiesRemaining);
             
-            LogDebug($"Enemy destroyed. Remaining: {enemiesRemaining}");
+            LogDebug($"Enemy destroyed. Energy: +{energyValue}. Remaining: {enemiesRemaining}");
             
             // Check if area cleared
             if (enemiesRemaining <= 0)
