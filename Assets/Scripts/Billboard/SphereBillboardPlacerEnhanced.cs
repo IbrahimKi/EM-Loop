@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class SphereBillboardPlacer : MonoBehaviour
+public class SphereBillboardPlacerEnhanced : MonoBehaviour
 {
     [Header("Sphere Settings")]
     [SerializeField] private float sphereRadius = 5f;

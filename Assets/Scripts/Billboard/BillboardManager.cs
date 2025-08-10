@@ -1,32 +1,25 @@
-using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine;
 
-// Einfaches, sehr performantes Billboard-System
 public class BillboardManager : MonoBehaviour
 {
     public static BillboardManager Instance { get; private set; }
     
     [SerializeField] private Camera targetCamera;
-    [SerializeField] private bool constrainY = false; // Y-Achse fixieren für 2.5D
+    [SerializeField] private bool constrainY = false;
+    [SerializeField] private bool useBulkUpdate = true;
     
-    // OPTIMIERUNG: Kapazität vordefiniert
-    private static readonly List<Billboard> activeBillboards = new List<Billboard>(100);
+    // Optimierte Listen für verschiedene Billboard-Typen
+    private static readonly List<AnimatedBillboard> animatedBillboards = new List<AnimatedBillboard>(200);
+    private static readonly List<AnimatedBillboard> staticBillboards = new List<AnimatedBillboard>(100);
+    
     private Transform cameraTransform;
+    private Vector3 lastCameraPosition;
+    private bool cameraHasMoved = true;
     
-    // OPTIMIERUNG: Batch-Cleanup Variablen
-    [SerializeField, Range(30, 300)] private int cleanupInterval = 60; // Frames zwischen Cleanups
-    private int frameCounter = 0;
-    private bool needsCleanup = false;
-    
-    // OPTIMIERUNG: Performance Monitoring
-    [Header("Performance Debug")]
+    // Performance Monitoring
     [SerializeField] private bool showDebugInfo = false;
-    private int lastBillboardCount = 0;
-    
-    public static event System.Action<Camera> OnCameraChanged;
-    
-    // OPTIMIERUNG: Public Property für Monitoring
-    public static int ActiveCount => activeBillboards.Count;
+    private int lastUpdateCount = 0;
     
     void Awake()
     {
@@ -34,7 +27,7 @@ public class BillboardManager : MonoBehaviour
         {
             Instance = this;
             targetCamera = targetCamera ?? Camera.main;
-            cacheCamera();
+            CacheCamera();
         }
         else
         {
@@ -42,208 +35,178 @@ public class BillboardManager : MonoBehaviour
         }
     }
     
-    void cacheCamera()
+    void CacheCamera()
     {
         if (targetCamera)
         {
             cameraTransform = targetCamera.transform;
-            OnCameraChanged?.Invoke(targetCamera);
+            lastCameraPosition = cameraTransform.position;
         }
     }
     
     void LateUpdate()
     {
-        if (!cameraTransform || activeBillboards.Count == 0) return;
+        if (!cameraTransform) return;
         
-        // OPTIMIERUNG: Batch-Cleanup alle N Frames
-        frameCounter++;
-        if (frameCounter >= cleanupInterval || needsCleanup)
+        CheckCameraMovement();
+        
+        if (useBulkUpdate && cameraHasMoved)
         {
-            CleanupNullBillboards();
-            frameCounter = 0;
-            needsCleanup = false;
+            BulkUpdateBillboards();
         }
         
-        UpdateAllBillboards();
+        UpdateDebugInfo();
+    }
+    
+    void CheckCameraMovement()
+    {
+        Vector3 currentPos = cameraTransform.position;
+        cameraHasMoved = Vector3.SqrMagnitude(currentPos - lastCameraPosition) > 0.001f;
         
-        // Debug Info
-        if (showDebugInfo && lastBillboardCount != activeBillboards.Count)
+        if (cameraHasMoved)
         {
-            Debug.Log($"Billboards: {activeBillboards.Count}");
-            lastBillboardCount = activeBillboards.Count;
+            lastCameraPosition = currentPos;
         }
     }
     
-    // OPTIMIERUNG: Performante Update-Schleife ohne Null-Checks
-    private void UpdateAllBillboards()
+    void BulkUpdateBillboards()
     {
         Vector3 cameraPos = cameraTransform.position;
         
-        // Optimierte Schleife - keine Null-Checks im Hot Path
-        for (int i = 0; i < activeBillboards.Count; i++)
+        // Update static billboards
+        for (int i = staticBillboards.Count - 1; i >= 0; i--)
         {
-            var billboard = activeBillboards[i];
-            var billboardTransform = billboard.transform;
+            var billboard = staticBillboards[i];
             
-            Vector3 direction = (cameraPos - billboardTransform.position).normalized;
-            
-            if (constrainY)
+            if (!billboard || !billboard.transform)
             {
-                direction.y = 0;
-                direction.Normalize();
+                staticBillboards.RemoveAt(i);
+                continue;
             }
             
-            billboardTransform.rotation = Quaternion.LookRotation(direction);
+            UpdateBillboardRotation(billboard.transform, cameraPos);
+        }
+        
+        // AnimatedBillboards handhaben ihr eigenes Update
+        // Cleanup null references
+        for (int i = animatedBillboards.Count - 1; i >= 0; i--)
+        {
+            if (!animatedBillboards[i])
+            {
+                animatedBillboards.RemoveAt(i);
+            }
         }
     }
     
-    // OPTIMIERUNG: Separate Cleanup-Methode
-    private void CleanupNullBillboards()
+    void UpdateBillboardRotation(Transform billboardTransform, Vector3 cameraPos)
     {
-        int originalCount = activeBillboards.Count;
+        Vector3 direction = (cameraPos - billboardTransform.position).normalized;
         
-        // Rückwärts iterieren für sicheres Entfernen
-        for (int i = activeBillboards.Count - 1; i >= 0; i--)
+        if (constrainY)
         {
-            if (!activeBillboards[i] || !activeBillboards[i].transform)
-            {
-                activeBillboards.RemoveAt(i);
-            }
+            direction.y = 0;
+            direction.Normalize();
         }
         
-        // Debug Info bei Cleanup
-        if (showDebugInfo && originalCount != activeBillboards.Count)
+        billboardTransform.rotation = Quaternion.LookRotation(direction);
+    }
+    
+    void UpdateDebugInfo()
+    {
+        if (showDebugInfo)
         {
-            Debug.Log($"Billboard Cleanup: {originalCount - activeBillboards.Count} null references removed");
+            int totalBillboards = animatedBillboards.Count + staticBillboards.Count;
+            if (lastUpdateCount != totalBillboards)
+            {
+                Debug.Log($"Billboards: {totalBillboards} (Animated: {animatedBillboards.Count}, Static: {staticBillboards.Count})");
+                lastUpdateCount = totalBillboards;
+            }
         }
     }
     
-    // OPTIMIERUNG: Intelligente Registrierung
-    public static void RegisterBillboard(Billboard billboard)
+    #region Registration System
+    
+    // Für AnimatedBillboard (bevorzugt)
+    public static void RegisterAnimatedBillboard(AnimatedBillboard billboard)
     {
         if (billboard == null) return;
         
-        // Doppelte Registrierung verhindern - schnellere Contains-Alternative
-        for (int i = 0; i < activeBillboards.Count; i++)
+        if (!animatedBillboards.Contains(billboard))
         {
-            if (activeBillboards[i] == billboard)
-                return; // Bereits registriert
-        }
-        
-        activeBillboards.Add(billboard);
-        
-        // Debug
-        if (Instance && Instance.showDebugInfo)
-        {
-            Debug.Log($"Billboard registered: {billboard.name} (Total: {activeBillboards.Count})");
+            animatedBillboards.Add(billboard);
         }
     }
     
-    // OPTIMIERUNG: Schnellere Deregistrierung
-    public static void UnregisterBillboard(Billboard billboard)
+    public static void UnregisterAnimatedBillboard(AnimatedBillboard billboard)
     {
-        if (billboard == null) return;
-        
-        // Schnelle Entfernung ohne Contains-Check
-        for (int i = 0; i < activeBillboards.Count; i++)
+        if (billboard != null)
         {
-            if (activeBillboards[i] == billboard)
-            {
-                activeBillboards.RemoveAt(i);
-                
-                // Debug
-                if (Instance && Instance.showDebugInfo)
-                {
-                    Debug.Log($"Billboard unregistered: {billboard.name} (Total: {activeBillboards.Count})");
-                }
-                return;
-            }
+            animatedBillboards.Remove(billboard);
         }
     }
     
-    // OPTIMIERUNG: Force Cleanup für kritische Situationen
-    [ContextMenu("Force Cleanup")]
-    public void ForceCleanup()
+    
+    // Generic Registration für AnimatedBillboard Kompatibilität
+    public static void RegisterBillboard(AnimatedBillboard billboard)
     {
-        CleanupNullBillboards();
-        Debug.Log($"Force cleanup completed. Active billboards: {activeBillboards.Count}");
+        RegisterAnimatedBillboard(billboard);
     }
     
-    // OPTIMIERUNG: Immediate Cleanup Flag
-    public static void RequestCleanup()
+    public static void UnregisterBillboard(AnimatedBillboard billboard)
     {
-        if (Instance)
-            Instance.needsCleanup = true;
+        UnregisterAnimatedBillboard(billboard);
     }
+    
+    #endregion
+    
+    #region Public API
     
     public void SetCamera(Camera newCamera)
     {
         targetCamera = newCamera;
-        cacheCamera();
+        CacheCamera();
     }
     
-    // OPTIMIERUNG: Bulk Operations für bessere Performance
-    public static void RegisterBillboards(Billboard[] billboards)
+    public static int GetTotalBillboardCount()
     {
-        if (billboards == null || billboards.Length == 0) return;
-        
-        // Kapazität vorab erweitern falls nötig
-        if (activeBillboards.Capacity < activeBillboards.Count + billboards.Length)
-        {
-            activeBillboards.Capacity = activeBillboards.Count + billboards.Length + 10;
-        }
-        
-        for (int i = 0; i < billboards.Length; i++)
-        {
-            if (billboards[i] != null)
-                RegisterBillboard(billboards[i]);
-        }
+        return animatedBillboards.Count + staticBillboards.Count;
     }
     
-    public static void UnregisterBillboards(Billboard[] billboards)
+    public static int GetAnimatedBillboardCount()
     {
-        if (billboards == null || billboards.Length == 0) return;
-        
-        for (int i = 0; i < billboards.Length; i++)
-        {
-            if (billboards[i] != null)
-                UnregisterBillboard(billboards[i]);
-        }
-        
-        // Nach Bulk-Unregister sofortiges Cleanup
-        RequestCleanup();
+        return animatedBillboards.Count;
     }
     
-    // OPTIMIERUNG: Memory-freundliches Clear
     public static void ClearAllBillboards()
     {
-        activeBillboards.Clear();
-        
-        if (Instance && Instance.showDebugInfo)
-        {
-            Debug.Log("All billboards cleared");
-        }
+        animatedBillboards.Clear();
+        staticBillboards.Clear();
     }
     
-    void OnDestroy()
-    {
-        ClearAllBillboards();
-    }
+    #endregion
     
-    // Performance Stats für Debugging
     void OnGUI()
     {
         if (!showDebugInfo) return;
         
         GUI.color = Color.white;
-        GUILayout.BeginArea(new Rect(10, 10, 300, 100));
-        GUILayout.Label($"Billboards: {activeBillboards.Count}");
-        GUILayout.Label($"Cleanup Interval: {cleanupInterval} frames");
-        GUILayout.Label($"Next Cleanup: {cleanupInterval - frameCounter} frames");
-        if (GUILayout.Button("Force Cleanup"))
+        GUILayout.BeginArea(new Rect(10, 10, 300, 120));
+        GUILayout.Label("Billboard Manager", GUI.skin.box);
+        
+        GUILayout.Label($"Total: {GetTotalBillboardCount()}");
+        GUILayout.Label($"Animated: {animatedBillboards.Count}");
+        GUILayout.Label($"Static: {staticBillboards.Count}");
+        GUILayout.Label($"Camera Moved: {cameraHasMoved}");
+        GUILayout.Label($"Bulk Update: {useBulkUpdate}");
+        
+        if (GUILayout.Button("Clear All"))
         {
-            ForceCleanup();
+            ClearAllBillboards();
         }
+        
         GUILayout.EndArea();
     }
 }
+    
+    
+
