@@ -10,10 +10,10 @@ GameObject:
   m_Component:
   - component: {fileID: 2280546813830132742}
   - component: {fileID: 675030690396545266}
-  - component: {fileID: 6683781400767797731}
   - component: {fileID: 8823069214514098026}
   - component: {fileID: 4296985624671942814}
   - component: {fileID: 1398640964512679043}
+  - component: {fileID: 263822431483650837}
   m_Layer: 8
   m_Name: Placeholder
   m_TagString: Untagged
@@ -60,19 +60,6 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 8
   enableDebugLogs: 0
---- !u!114 &6683781400767797731
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4070676540000857483}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 340fb568c130f4d40a2bff91d942d705, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  autoRegister: 1
 --- !u!114 &8823069214514098026
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -162,3 +149,29 @@ MonoBehaviour:
   detectionRadius: 1
   selectionEffect: {fileID: 0}
   highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+--- !u!114 &263822431483650837
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4070676540000857483}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3916443eef726bd4ea0229da919bace4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  autoRegister: 1
+  constrainY: 0
+  autoPlaceOnSphere: 1
+  sphereRadius: 5
+  sphereCenter: {fileID: 0}
+  animationSprites:
+  - {fileID: 2109266824, guid: d99f034d50402c04e9dbb53c8f3392dd, type: 3}
+  useGlobalRhythm: 1
+  manualFrameRate: 1
+  loop: 1
+  autoStart: 1
+  currentFrame: 0
+  isPlaying: 0
+  isPaused: 0

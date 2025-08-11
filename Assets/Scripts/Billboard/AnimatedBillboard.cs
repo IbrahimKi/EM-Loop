@@ -1,7 +1,6 @@
 using UnityEngine;
 
-[RequireComponent(typeof(SpriteRenderer))]
-public class AnimatedBillboard : MonoBehaviour
+public class AnimatedBillboard : Billboard
 {
     [Header("Animation")]
     [SerializeField] private Sprite[] animationSprites;
@@ -10,61 +9,30 @@ public class AnimatedBillboard : MonoBehaviour
     [SerializeField] private bool loop = true;
     [SerializeField] private bool autoStart = true;
     
-    [Header("Billboard")]
-    [SerializeField] private bool autoRegister = true;
-    [SerializeField] private bool constrainY = false;
-    
-    [Header("Sphere Placement")]
-    [SerializeField] private bool autoPlaceOnSphere = true;
-    [SerializeField] private float sphereRadius = 5f;
-    [SerializeField] private Transform sphereCenter;
-    
     [Header("Current State")]
     [SerializeField, ReadOnly] private int currentFrame = 0;
     [SerializeField, ReadOnly] private bool isPlaying = false;
     [SerializeField, ReadOnly] private bool isPaused = false;
     
-    // Components
-    private SpriteRenderer spriteRenderer;
-    private Camera targetCamera;
-    private Transform cameraTransform;
-    
     // Animation
     private float manualTimer = 0f;
     
-    // Billboard Cache
-    private Vector3 lastCameraPosition;
-    private bool needsBillboardUpdate = true;
+    // Events
+    public static System.Action<AnimatedBillboard> OnAnimationStarted;
+    public static System.Action<AnimatedBillboard> OnAnimationStopped;
+    public static System.Action<AnimatedBillboard, int> OnFrameChanged;
     
     public bool IsPlaying => isPlaying;
     public int CurrentFrame => currentFrame;
     public int TotalFrames => animationSprites?.Length ?? 0;
     
-    void Awake()
+    protected override void OnAwakeOverride()
     {
-        spriteRenderer = GetComponent<SpriteRenderer>();
-        targetCamera = Camera.main;
-        
-        if (targetCamera != null)
-        {
-            cameraTransform = targetCamera.transform;
-        }
-        
-        if (autoPlaceOnSphere)
-        {
-            PlaceOnSphere();
-        }
-        
         ValidateSetup();
     }
     
-    void Start()
+    protected override void OnStartOverride()
     {
-        if (autoRegister)
-        {
-            BillboardManager.RegisterAnimatedBillboard(this);
-        }
-        
         if (autoStart)
         {
             Play();
@@ -73,36 +41,26 @@ public class AnimatedBillboard : MonoBehaviour
         SubscribeToRhythm();
     }
     
-    void OnEnable()
+    protected override void OnEnableOverride()
     {
-        if (autoRegister)
-        {
-            BillboardManager.RegisterBillboard(this);
-        }
-        
         if (isPlaying && !isPaused)
         {
             SubscribeToRhythm();
         }
     }
     
-    void OnDisable()
+    protected override void OnDisableOverride()
     {
-        BillboardManager.UnregisterBillboard(this);
         UnsubscribeFromRhythm();
     }
     
-    void OnDestroy()
+    protected override void OnDestroyOverride()
     {
-        BillboardManager.UnregisterBillboard(this);
         UnsubscribeFromRhythm();
     }
     
-    void Update()
+    protected override void OnUpdateOverride()
     {
-        // Billboard Update - nur wenn Kamera bewegt
-        UpdateBillboard();
-        
         // Manual Animation
         if (!useGlobalRhythm && isPlaying && !isPaused)
         {
@@ -114,30 +72,6 @@ public class AnimatedBillboard : MonoBehaviour
                 manualTimer = 0f;
             }
         }
-    }
-    
-    void UpdateBillboard()
-    {
-        if (cameraTransform == null) return;
-        
-        Vector3 cameraPos = cameraTransform.position;
-        
-        // Performance: Nur Update wenn Kamera bewegt
-        if (Vector3.SqrMagnitude(cameraPos - lastCameraPosition) < 0.001f && !needsBillboardUpdate)
-            return;
-        
-        Vector3 direction = (cameraPos - transform.position).normalized;
-        
-        if (constrainY)
-        {
-            direction.y = 0;
-            direction.Normalize();
-        }
-        
-        transform.rotation = Quaternion.LookRotation(direction);
-        
-        lastCameraPosition = cameraPos;
-        needsBillboardUpdate = false;
     }
     
     void ValidateSetup()
@@ -155,26 +89,6 @@ public class AnimatedBillboard : MonoBehaviour
                 Debug.LogWarning($"Null sprite at index {i} in {name}!");
             }
         }
-    }
-    
-    void PlaceOnSphere()
-    {
-        if (sphereCenter == null)
-        {
-            var placer = GetComponentInParent<SphereBillboardPlacer>();
-            if (placer != null)
-            {
-                sphereCenter = placer.transform;
-            }
-        }
-        
-        if (sphereCenter == null) return;
-        
-        Vector3 direction = (transform.position - sphereCenter.position).normalized;
-        Vector3 surfacePosition = sphereCenter.position + direction * sphereRadius;
-        
-        transform.position = surfacePosition;
-        needsBillboardUpdate = true;
     }
     
     #region Rhythm System
@@ -236,6 +150,7 @@ public class AnimatedBillboard : MonoBehaviour
         }
         
         UpdateSprite();
+        OnAnimationStarted?.Invoke(this);
     }
     
     public void Stop()
@@ -247,6 +162,7 @@ public class AnimatedBillboard : MonoBehaviour
         
         UnsubscribeFromRhythm();
         UpdateSprite();
+        OnAnimationStopped?.Invoke(this);
     }
     
     public void Pause()
@@ -291,14 +207,20 @@ public class AnimatedBillboard : MonoBehaviour
         }
         
         UpdateSprite();
+        OnFrameChanged?.Invoke(this, currentFrame);
     }
     
     public void SetFrame(int frame)
     {
         if (animationSprites == null || animationSprites.Length == 0) return;
         
-        currentFrame = Mathf.Clamp(frame, 0, animationSprites.Length - 1);
-        UpdateSprite();
+        int newFrame = Mathf.Clamp(frame, 0, animationSprites.Length - 1);
+        if (newFrame != currentFrame)
+        {
+            currentFrame = newFrame;
+            UpdateSprite();
+            OnFrameChanged?.Invoke(this, currentFrame);
+        }
     }
     
     void UpdateSprite()
@@ -306,7 +228,7 @@ public class AnimatedBillboard : MonoBehaviour
         if (spriteRenderer == null || animationSprites == null || animationSprites.Length == 0) return;
         
         Sprite spriteToSet = currentFrame < animationSprites.Length ? animationSprites[currentFrame] : null;
-        spriteRenderer.sprite = spriteToSet;
+        SetSprite(spriteToSet);
     }
     
     #endregion
@@ -325,32 +247,53 @@ public class AnimatedBillboard : MonoBehaviour
         }
     }
     
-    public void SetSphereRadius(float radius)
+    public void SetFrameRate(float frameRate)
     {
-        sphereRadius = radius;
-        if (autoPlaceOnSphere)
+        manualFrameRate = Mathf.Max(0.1f, frameRate);
+    }
+    
+    public void SetLoop(bool shouldLoop)
+    {
+        loop = shouldLoop;
+    }
+    
+    public void SetUseGlobalRhythm(bool useRhythm)
+    {
+        if (useGlobalRhythm != useRhythm)
         {
-            PlaceOnSphere();
+            UnsubscribeFromRhythm();
+            useGlobalRhythm = useRhythm;
+            
+            if (useGlobalRhythm && isPlaying && !isPaused)
+            {
+                SubscribeToRhythm();
+            }
         }
     }
     
-    public void SetCamera(Camera newCamera)
+    public Sprite[] GetAnimationSprites()
     {
-        targetCamera = newCamera;
-        cameraTransform = newCamera != null ? newCamera.transform : null;
-        needsBillboardUpdate = true;
+        return animationSprites;
     }
     
-    // Billboard Registration Methods - für Kompatibilität mit BillboardManager
-    public void Register() => BillboardManager.RegisterBillboard(this);
-    public void Unregister() => BillboardManager.UnregisterBillboard(this);
+    public float GetFrameRate()
+    {
+        return manualFrameRate;
+    }
+    
+    public bool IsLooping()
+    {
+        return loop;
+    }
+    
+    public bool IsUsingGlobalRhythm()
+    {
+        return useGlobalRhythm;
+    }
     
     #endregion
     
     #region Context Menu
-    
-    [ContextMenu("Place On Sphere")]
-    void DebugPlaceOnSphere() => PlaceOnSphere();
     
     [ContextMenu("Play Animation")]
     void DebugPlay() => Play();
@@ -360,6 +303,9 @@ public class AnimatedBillboard : MonoBehaviour
     
     [ContextMenu("Next Frame")]
     void DebugNextFrame() => NextFrame();
+    
+    [ContextMenu("Validate Setup")]
+    void DebugValidateSetup() => ValidateSetup();
     
     #endregion
 }

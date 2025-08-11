@@ -10,8 +10,8 @@ public class BillboardManager : MonoBehaviour
     [SerializeField] private bool useBulkUpdate = true;
     
     // Optimierte Listen für verschiedene Billboard-Typen
+    private static readonly List<Billboard> allBillboards = new List<Billboard>(300);
     private static readonly List<AnimatedBillboard> animatedBillboards = new List<AnimatedBillboard>(200);
-    private static readonly List<AnimatedBillboard> staticBillboards = new List<AnimatedBillboard>(100);
     
     private Transform cameraTransform;
     private Vector3 lastCameraPosition;
@@ -21,6 +21,10 @@ public class BillboardManager : MonoBehaviour
     [SerializeField] private bool showDebugInfo = false;
     private int lastUpdateCount = 0;
     
+    // Events
+    public static System.Action<int> OnBillboardCountChanged;
+    public static System.Action OnCameraMoved;
+    
     void Awake()
     {
         if (Instance == null)
@@ -28,10 +32,23 @@ public class BillboardManager : MonoBehaviour
             Instance = this;
             targetCamera = targetCamera ?? Camera.main;
             CacheCamera();
+            
+            // Subscribe to billboard events
+            Billboard.OnBillboardRegistered += OnBillboardRegistered;
+            Billboard.OnBillboardUnregistered += OnBillboardUnregistered;
         }
         else
         {
             Destroy(gameObject);
+        }
+    }
+    
+    void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Billboard.OnBillboardRegistered -= OnBillboardRegistered;
+            Billboard.OnBillboardUnregistered -= OnBillboardUnregistered;
         }
     }
     
@@ -66,6 +83,7 @@ public class BillboardManager : MonoBehaviour
         if (cameraHasMoved)
         {
             lastCameraPosition = currentPos;
+            OnCameraMoved?.Invoke();
         }
     }
     
@@ -73,22 +91,24 @@ public class BillboardManager : MonoBehaviour
     {
         Vector3 cameraPos = cameraTransform.position;
         
-        // Update static billboards
-        for (int i = staticBillboards.Count - 1; i >= 0; i--)
+        // Update alle Billboards (außer AnimatedBillboards, die sich selbst updaten)
+        for (int i = allBillboards.Count - 1; i >= 0; i--)
         {
-            var billboard = staticBillboards[i];
+            var billboard = allBillboards[i];
             
             if (!billboard || !billboard.transform)
             {
-                staticBillboards.RemoveAt(i);
+                allBillboards.RemoveAt(i);
                 continue;
             }
+            
+            // Skip AnimatedBillboards - sie handhaben ihr eigenes Update
+            if (billboard is AnimatedBillboard) continue;
             
             UpdateBillboardRotation(billboard.transform, cameraPos);
         }
         
-        // AnimatedBillboards handhaben ihr eigenes Update
-        // Cleanup null references
+        // Cleanup null references in animated list
         for (int i = animatedBillboards.Count - 1; i >= 0; i--)
         {
             if (!animatedBillboards[i])
@@ -115,25 +135,64 @@ public class BillboardManager : MonoBehaviour
     {
         if (showDebugInfo)
         {
-            int totalBillboards = animatedBillboards.Count + staticBillboards.Count;
+            int totalBillboards = allBillboards.Count;
             if (lastUpdateCount != totalBillboards)
             {
-                Debug.Log($"Billboards: {totalBillboards} (Animated: {animatedBillboards.Count}, Static: {staticBillboards.Count})");
+                Debug.Log($"Billboards: {totalBillboards} (Animated: {animatedBillboards.Count}, Static: {totalBillboards - animatedBillboards.Count})");
                 lastUpdateCount = totalBillboards;
+                OnBillboardCountChanged?.Invoke(totalBillboards);
             }
         }
     }
     
-    #region Registration System
+    #region Event Handlers
     
-    // Für AnimatedBillboard (bevorzugt)
-    public static void RegisterAnimatedBillboard(AnimatedBillboard billboard)
+    void OnBillboardRegistered(Billboard billboard)
     {
         if (billboard == null) return;
         
-        if (!animatedBillboards.Contains(billboard))
+        if (!allBillboards.Contains(billboard))
         {
-            animatedBillboards.Add(billboard);
+            allBillboards.Add(billboard);
+        }
+        
+        // Track animated billboards separately
+        if (billboard is AnimatedBillboard animatedBillboard)
+        {
+            if (!animatedBillboards.Contains(animatedBillboard))
+            {
+                animatedBillboards.Add(animatedBillboard);
+            }
+        }
+        
+        OnBillboardCountChanged?.Invoke(allBillboards.Count);
+    }
+    
+    void OnBillboardUnregistered(Billboard billboard)
+    {
+        if (billboard != null)
+        {
+            allBillboards.Remove(billboard);
+            
+            if (billboard is AnimatedBillboard animatedBillboard)
+            {
+                animatedBillboards.Remove(animatedBillboard);
+            }
+            
+            OnBillboardCountChanged?.Invoke(allBillboards.Count);
+        }
+    }
+    
+    #endregion
+    
+    #region Registration System (Legacy Support)
+    
+    // Legacy methods für AnimatedBillboard Kompatibilität
+    public static void RegisterAnimatedBillboard(AnimatedBillboard billboard)
+    {
+        if (billboard != null)
+        {
+            billboard.Register();
         }
     }
     
@@ -141,20 +200,25 @@ public class BillboardManager : MonoBehaviour
     {
         if (billboard != null)
         {
-            animatedBillboards.Remove(billboard);
+            billboard.Unregister();
         }
     }
     
-    
-    // Generic Registration für AnimatedBillboard Kompatibilität
-    public static void RegisterBillboard(AnimatedBillboard billboard)
+    // Generic Registration
+    public static void RegisterBillboard(Billboard billboard)
     {
-        RegisterAnimatedBillboard(billboard);
+        if (billboard != null)
+        {
+            billboard.Register();
+        }
     }
     
-    public static void UnregisterBillboard(AnimatedBillboard billboard)
+    public static void UnregisterBillboard(Billboard billboard)
     {
-        UnregisterAnimatedBillboard(billboard);
+        if (billboard != null)
+        {
+            billboard.Unregister();
+        }
     }
     
     #endregion
@@ -169,7 +233,7 @@ public class BillboardManager : MonoBehaviour
     
     public static int GetTotalBillboardCount()
     {
-        return animatedBillboards.Count + staticBillboards.Count;
+        return allBillboards.Count;
     }
     
     public static int GetAnimatedBillboardCount()
@@ -177,10 +241,33 @@ public class BillboardManager : MonoBehaviour
         return animatedBillboards.Count;
     }
     
+    public static int GetStaticBillboardCount()
+    {
+        return allBillboards.Count - animatedBillboards.Count;
+    }
+    
+    public static List<Billboard> GetAllBillboards()
+    {
+        return new List<Billboard>(allBillboards);
+    }
+    
+    public static List<AnimatedBillboard> GetAnimatedBillboards()
+    {
+        return new List<AnimatedBillboard>(animatedBillboards);
+    }
+    
     public static void ClearAllBillboards()
     {
+        allBillboards.Clear();
         animatedBillboards.Clear();
-        staticBillboards.Clear();
+    }
+    
+    public static void SetBulkUpdate(bool enabled)
+    {
+        if (Instance != null)
+        {
+            Instance.useBulkUpdate = enabled;
+        }
     }
     
     #endregion
@@ -190,12 +277,12 @@ public class BillboardManager : MonoBehaviour
         if (!showDebugInfo) return;
         
         GUI.color = Color.white;
-        GUILayout.BeginArea(new Rect(10, 10, 300, 120));
+        GUILayout.BeginArea(new Rect(10, 10, 300, 140));
         GUILayout.Label("Billboard Manager", GUI.skin.box);
         
         GUILayout.Label($"Total: {GetTotalBillboardCount()}");
         GUILayout.Label($"Animated: {animatedBillboards.Count}");
-        GUILayout.Label($"Static: {staticBillboards.Count}");
+        GUILayout.Label($"Static: {GetStaticBillboardCount()}");
         GUILayout.Label($"Camera Moved: {cameraHasMoved}");
         GUILayout.Label($"Bulk Update: {useBulkUpdate}");
         
@@ -204,9 +291,11 @@ public class BillboardManager : MonoBehaviour
             ClearAllBillboards();
         }
         
+        if (GUILayout.Button("Toggle Bulk Update"))
+        {
+            useBulkUpdate = !useBulkUpdate;
+        }
+        
         GUILayout.EndArea();
     }
 }
-    
-    
-
