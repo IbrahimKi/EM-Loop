@@ -17,6 +17,9 @@ public class AnimatedBillboard : Billboard
     // Animation
     private float manualTimer = 0f;
     
+    // Config
+    private GameConfig config;
+    
     // Events
     public static System.Action<AnimatedBillboard> OnAnimationStarted;
     public static System.Action<AnimatedBillboard> OnAnimationStopped;
@@ -28,6 +31,7 @@ public class AnimatedBillboard : Billboard
     
     protected override void OnAwakeOverride()
     {
+        config = GameConfig.Instance;
         ValidateSetup();
     }
     
@@ -66,12 +70,23 @@ public class AnimatedBillboard : Billboard
         {
             manualTimer += Time.deltaTime;
             
-            if (manualTimer >= manualFrameRate)
+            float frameRate = GetEffectiveFrameRate();
+            if (manualTimer >= frameRate)
             {
                 NextFrame();
                 manualTimer = 0f;
             }
         }
+    }
+    
+    float GetEffectiveFrameRate()
+    {
+        // Nutze manualFrameRate falls gesetzt, sonst Rhythm-basiert
+        if (manualFrameRate > 0)
+            return manualFrameRate;
+            
+        // Fallback zu Beat Duration aus Config
+        return config?.beatDuration ?? 1f;
     }
     
     void ValidateSetup()
@@ -97,6 +112,16 @@ public class AnimatedBillboard : Billboard
     {
         if (!useGlobalRhythm) return;
         
+        // Check if GlobalRhythmManager exists
+        if (GlobalRhythmManager.Instance == null)
+        {
+            if (config != null)
+            {
+                Debug.LogWarning($"[{name}] GlobalRhythmManager not found, using config beat duration");
+            }
+            return;
+        }
+        
         GlobalRhythmManager.OnBeatTick += OnRhythmBeat;
         GlobalRhythmManager.OnRhythmPaused += OnRhythmPaused;
         GlobalRhythmManager.OnRhythmResumed += OnRhythmResumed;
@@ -106,6 +131,8 @@ public class AnimatedBillboard : Billboard
     void UnsubscribeFromRhythm()
     {
         if (!useGlobalRhythm) return;
+        
+        if (GlobalRhythmManager.Instance == null) return;
         
         GlobalRhythmManager.OnBeatTick -= OnRhythmBeat;
         GlobalRhythmManager.OnRhythmPaused -= OnRhythmPaused;
@@ -278,7 +305,7 @@ public class AnimatedBillboard : Billboard
     
     public float GetFrameRate()
     {
-        return manualFrameRate;
+        return GetEffectiveFrameRate();
     }
     
     public bool IsLooping()
@@ -289,6 +316,16 @@ public class AnimatedBillboard : Billboard
     public bool IsUsingGlobalRhythm()
     {
         return useGlobalRhythm;
+    }
+    
+    public bool HasGlobalRhythmManager()
+    {
+        return GlobalRhythmManager.Instance != null;
+    }
+    
+    public float GetConfigBeatDuration()
+    {
+        return config?.beatDuration ?? 1f;
     }
     
     #endregion
@@ -306,6 +343,30 @@ public class AnimatedBillboard : Billboard
     
     [ContextMenu("Validate Setup")]
     void DebugValidateSetup() => ValidateSetup();
+    
+    [ContextMenu("Debug Animation Info")]
+    void DebugAnimationInfo()
+    {
+        Debug.Log($"[{name}] Animation Info:\n" +
+                 $"  Playing: {isPlaying} | Paused: {isPaused}\n" +
+                 $"  Frame: {currentFrame}/{TotalFrames}\n" +
+                 $"  Use Global Rhythm: {useGlobalRhythm}\n" +
+                 $"  Global Rhythm Available: {HasGlobalRhythmManager()}\n" +
+                 $"  Frame Rate: {GetFrameRate()}\n" +
+                 $"  Config Beat Duration: {GetConfigBeatDuration()}\n" +
+                 $"  Loop: {loop}");
+    }
+    
+    [ContextMenu("Test Rhythm Fallback")]
+    void DebugTestRhythmFallback()
+    {
+        bool originalRhythm = useGlobalRhythm;
+        useGlobalRhythm = false;
+        
+        Debug.Log($"Testing without rhythm system - Frame Rate: {GetFrameRate()}");
+        
+        useGlobalRhythm = originalRhythm;
+    }
     
     #endregion
 }

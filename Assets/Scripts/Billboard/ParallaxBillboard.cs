@@ -43,11 +43,14 @@ public class ParallaxBillboard : Billboard
     
     [Header("Performance")]
     [SerializeField] private bool useBulkUpdate = true;
-    [SerializeField] private float updateThreshold = 0.01f;
+    [SerializeField] private float updateThresholdOverride = -1f; // -1 = use config
     
     [Header("Debug")]
     [SerializeField] private bool showLayerGizmos = false;
     [SerializeField] private bool enableDebugLogs = false;
+    
+    // Config
+    private GameConfig config;
     
     // Runtime
     private Camera targetCamera;
@@ -63,7 +66,9 @@ public class ParallaxBillboard : Billboard
     
     protected override void OnAwakeOverride()
     {
-        targetCamera = Camera.main;
+        config = GameConfig.Instance;
+        targetCamera = GameReferences.MainCamera;
+        
         if (targetCamera != null)
         {
             cameraTransform = targetCamera.transform;
@@ -71,7 +76,6 @@ public class ParallaxBillboard : Billboard
             lastCameraRotation = cameraTransform.rotation;
         }
         
-        // Don't auto-create in Awake, do it in Start
         ValidateSetup();
     }
     
@@ -109,6 +113,14 @@ public class ParallaxBillboard : Billboard
         OnParallaxDestroyed?.Invoke(this);
     }
     
+    float GetUpdateThreshold()
+    {
+        if (updateThresholdOverride > 0)
+            return updateThresholdOverride;
+            
+        return config?.billboardUpdateThreshold ?? 0.01f;
+    }
+    
     bool HasCameraChanged()
     {
         if (cameraTransform == null) return false;
@@ -116,8 +128,9 @@ public class ParallaxBillboard : Billboard
         Vector3 currentPos = cameraTransform.position;
         Quaternion currentRot = cameraTransform.rotation;
         
-        bool posChanged = Vector3.SqrMagnitude(currentPos - lastCameraPosition) > updateThreshold * updateThreshold;
-        bool rotChanged = Quaternion.Angle(currentRot, lastCameraRotation) > updateThreshold;
+        float threshold = GetUpdateThreshold();
+        bool posChanged = Vector3.SqrMagnitude(currentPos - lastCameraPosition) > threshold * threshold;
+        bool rotChanged = Quaternion.Angle(currentRot, lastCameraRotation) > threshold;
         
         return posChanged || rotChanged;
     }
@@ -363,6 +376,24 @@ public class ParallaxBillboard : Billboard
         }
     }
     
+    public void SetUpdateThreshold(float threshold)
+    {
+        updateThresholdOverride = Mathf.Max(0.001f, threshold);
+    }
+    
+    public void RefreshCamera()
+    {
+        targetCamera = GameReferences.MainCamera;
+        if (targetCamera != null)
+        {
+            cameraTransform = targetCamera.transform;
+            lastCameraPosition = cameraTransform.position;
+            lastCameraRotation = cameraTransform.rotation;
+        }
+        
+        LogDebug($"Camera refreshed: {targetCamera?.name ?? "NULL"}");
+    }
+    
     public int GetLayerCount() => parallaxLayers.Count;
     
     public ParallaxLayer GetLayer(int index)
@@ -374,6 +405,11 @@ public class ParallaxBillboard : Billboard
     public List<ParallaxLayer> GetAllLayers()
     {
         return new List<ParallaxLayer>(parallaxLayers);
+    }
+    
+    public float GetCurrentUpdateThreshold()
+    {
+        return GetUpdateThreshold();
     }
     
     #endregion
@@ -425,6 +461,9 @@ public class ParallaxBillboard : Billboard
     [ContextMenu("Validate Setup")]
     void DebugValidateSetup() => ValidateSetup();
     
+    [ContextMenu("Refresh Camera")]
+    void DebugRefreshCamera() => RefreshCamera();
+    
     [ContextMenu("Add Test Layer")]
     void DebugAddTestLayer()
     {
@@ -439,6 +478,20 @@ public class ParallaxBillboard : Billboard
         };
         
         AddLayer(testLayer);
+    }
+    
+    [ContextMenu("Debug Config Info")]
+    void DebugConfigInfo()
+    {
+        Debug.Log($"[{name}] Parallax Config Info:\n" +
+                 $"  Config Found: {config != null}\n" +
+                 $"  Update Threshold: {GetCurrentUpdateThreshold()}\n" +
+                 $"  Camera: {targetCamera?.name ?? "NULL"}\n" +
+                 $"  Billboard Update Threshold: {config?.billboardUpdateThreshold ?? 0.001f}\n" +
+                 $"  Parallax Mode: {parallaxMode}\n" +
+                 $"  Layer Count: {parallaxLayers.Count}\n" +
+                 $"  Auto Create: {autoCreateLayers}\n" +
+                 $"  Real-time Update: {updateInRealtime}");
     }
     
     [ContextMenu("Debug Layer Positions")]
@@ -468,6 +521,20 @@ public class ParallaxBillboard : Billboard
                 Debug.Log($"Layer {i} ({layer.layerName}): NO GAMEOBJECT");
             }
         }
+    }
+    
+    [ContextMenu("Test Performance")]
+    void DebugTestPerformance()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        
+        for (int i = 0; i < 100; i++)
+        {
+            UpdateAllLayers();
+        }
+        
+        sw.Stop();
+        Debug.Log($"100 layer updates took: {sw.ElapsedMilliseconds}ms");
     }
     
     #endregion
@@ -502,6 +569,17 @@ public class ParallaxBillboard : Billboard
         {
             Gizmos.color = Color.green;
             Gizmos.DrawLine(center, cameraTransform.position);
+        }
+        
+        // Sphere visualization from config
+        if (config != null)
+        {
+            var sphereCenter = GameReferences.SphereCenter;
+            if (sphereCenter != null)
+            {
+                Gizmos.color = config.sphereGizmoColor;
+                Gizmos.DrawWireSphere(sphereCenter.position, config.sphereRadius);
+            }
         }
     }
     

@@ -5,9 +5,12 @@ public class BillboardManager : MonoBehaviour
 {
     public static BillboardManager Instance { get; private set; }
     
-    [SerializeField] private Camera targetCamera;
-    [SerializeField] private bool constrainY = false;
-    [SerializeField] private bool useBulkUpdate = true;
+    [SerializeField] private Camera targetCameraOverride;
+    [SerializeField] private bool constrainYOverride = false;
+    [SerializeField] private bool useBulkUpdateOverride = true;
+    
+    // Config
+    private GameConfig config;
     
     // Optimierte Listen für verschiedene Billboard-Typen
     private static readonly List<Billboard> allBillboards = new List<Billboard>(300);
@@ -30,8 +33,8 @@ public class BillboardManager : MonoBehaviour
         if (Instance == null)
         {
             Instance = this;
-            targetCamera = targetCamera ?? Camera.main;
-            CacheCamera();
+            config = GameConfig.Instance;
+            SetupCamera();
             
             // Subscribe to billboard events
             Billboard.OnBillboardRegistered += OnBillboardRegistered;
@@ -52,8 +55,9 @@ public class BillboardManager : MonoBehaviour
         }
     }
     
-    void CacheCamera()
+    void SetupCamera()
     {
+        Camera targetCamera = targetCameraOverride ?? GameReferences.MainCamera;
         if (targetCamera)
         {
             cameraTransform = targetCamera.transform;
@@ -67,7 +71,8 @@ public class BillboardManager : MonoBehaviour
         
         CheckCameraMovement();
         
-        if (useBulkUpdate && cameraHasMoved)
+        bool shouldUseBulkUpdate = GetBulkUpdateSetting();
+        if (shouldUseBulkUpdate && cameraHasMoved)
         {
             BulkUpdateBillboards();
         }
@@ -75,10 +80,23 @@ public class BillboardManager : MonoBehaviour
         UpdateDebugInfo();
     }
     
+    bool GetBulkUpdateSetting()
+    {
+        if (useBulkUpdateOverride != true) return useBulkUpdateOverride;
+        return config?.useBulkBillboardUpdate ?? true;
+    }
+    
+    bool GetConstrainYSetting()
+    {
+        if (constrainYOverride != false) return constrainYOverride;
+        return config?.billboardConstrainY ?? false;
+    }
+    
     void CheckCameraMovement()
     {
         Vector3 currentPos = cameraTransform.position;
-        cameraHasMoved = Vector3.SqrMagnitude(currentPos - lastCameraPosition) > 0.001f;
+        float threshold = config?.billboardUpdateThreshold ?? 0.001f;
+        cameraHasMoved = Vector3.SqrMagnitude(currentPos - lastCameraPosition) > threshold;
         
         if (cameraHasMoved)
         {
@@ -90,6 +108,7 @@ public class BillboardManager : MonoBehaviour
     void BulkUpdateBillboards()
     {
         Vector3 cameraPos = cameraTransform.position;
+        bool constrainY = GetConstrainYSetting();
         
         // Update alle Billboards (außer AnimatedBillboards, die sich selbst updaten)
         for (int i = allBillboards.Count - 1; i >= 0; i--)
@@ -105,7 +124,7 @@ public class BillboardManager : MonoBehaviour
             // Skip AnimatedBillboards - sie handhaben ihr eigenes Update
             if (billboard is AnimatedBillboard) continue;
             
-            UpdateBillboardRotation(billboard.transform, cameraPos);
+            UpdateBillboardRotation(billboard.transform, cameraPos, constrainY);
         }
         
         // Cleanup null references in animated list
@@ -118,7 +137,7 @@ public class BillboardManager : MonoBehaviour
         }
     }
     
-    void UpdateBillboardRotation(Transform billboardTransform, Vector3 cameraPos)
+    void UpdateBillboardRotation(Transform billboardTransform, Vector3 cameraPos, bool constrainY)
     {
         Vector3 direction = (cameraPos - billboardTransform.position).normalized;
         
@@ -227,8 +246,8 @@ public class BillboardManager : MonoBehaviour
     
     public void SetCamera(Camera newCamera)
     {
-        targetCamera = newCamera;
-        CacheCamera();
+        targetCameraOverride = newCamera;
+        SetupCamera();
     }
     
     public static int GetTotalBillboardCount()
@@ -266,8 +285,31 @@ public class BillboardManager : MonoBehaviour
     {
         if (Instance != null)
         {
-            Instance.useBulkUpdate = enabled;
+            Instance.useBulkUpdateOverride = enabled;
         }
+    }
+    
+    public void RefreshCamera()
+    {
+        SetupCamera();
+    }
+    
+    #endregion
+    
+    #region Context Menu
+    
+    [ContextMenu("Refresh Camera")]
+    void DebugRefreshCamera() => RefreshCamera();
+    
+    [ContextMenu("Debug Config Info")]
+    void DebugConfigInfo()
+    {
+        Debug.Log($"[BillboardManager] Config Info:\n" +
+                 $"  Config Found: {config != null}\n" +
+                 $"  Bulk Update: {GetBulkUpdateSetting()}\n" +
+                 $"  Constrain Y: {GetConstrainYSetting()}\n" +
+                 $"  Update Threshold: {config?.billboardUpdateThreshold ?? 0.001f}\n" +
+                 $"  Camera: {cameraTransform?.name ?? "NULL"}");
     }
     
     #endregion
@@ -277,14 +319,16 @@ public class BillboardManager : MonoBehaviour
         if (!showDebugInfo) return;
         
         GUI.color = Color.white;
-        GUILayout.BeginArea(new Rect(10, 10, 300, 140));
+        GUILayout.BeginArea(new Rect(10, 10, 300, 180));
         GUILayout.Label("Billboard Manager", GUI.skin.box);
         
         GUILayout.Label($"Total: {GetTotalBillboardCount()}");
         GUILayout.Label($"Animated: {animatedBillboards.Count}");
         GUILayout.Label($"Static: {GetStaticBillboardCount()}");
         GUILayout.Label($"Camera Moved: {cameraHasMoved}");
-        GUILayout.Label($"Bulk Update: {useBulkUpdate}");
+        GUILayout.Label($"Bulk Update: {GetBulkUpdateSetting()}");
+        GUILayout.Label($"Constrain Y: {GetConstrainYSetting()}");
+        GUILayout.Label($"Config: {(config != null ? "✅" : "❌")}");
         
         if (GUILayout.Button("Clear All"))
         {
@@ -293,7 +337,12 @@ public class BillboardManager : MonoBehaviour
         
         if (GUILayout.Button("Toggle Bulk Update"))
         {
-            useBulkUpdate = !useBulkUpdate;
+            useBulkUpdateOverride = !useBulkUpdateOverride;
+        }
+        
+        if (GUILayout.Button("Refresh Camera"))
+        {
+            RefreshCamera();
         }
         
         GUILayout.EndArea();

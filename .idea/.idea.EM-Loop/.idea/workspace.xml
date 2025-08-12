@@ -6,8 +6,9 @@
   <component name="ChangeListManager">
     <list default="true" id="867e5ba7-17e0-4d68-b72a-fe82d984e970" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.EM-Loop/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.EM-Loop/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Draw/CircleSystemManager.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Draw/CircleSystemManager.cs.meta" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Billboard/AnimatedBillboard.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Billboard/AnimatedBillboard.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Billboard/Billboard.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Billboard/Billboard.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Scripts/Billboard/BillboardManager.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Scripts/Billboard/BillboardManager.cs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -108,7 +109,7 @@
       <workItem from="1754047013800" duration="19052000" />
       <workItem from="1754079529518" duration="30614000" />
       <workItem from="1754218461393" duration="9524000" />
-      <workItem from="1754852845655" duration="3278000" />
+      <workItem from="1754852845655" duration="4030000" />
     </task>
     <servers />
   </component>

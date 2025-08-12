@@ -9,13 +9,16 @@ public class Billboard : MonoBehaviour
     
     [Header("Sphere Placement")]
     [SerializeField] private bool autoPlaceOnSphere = true;
-    [SerializeField] private float sphereRadius = 5f;
-    [SerializeField] private Transform sphereCenter;
+    [SerializeField] private float sphereRadiusOverride = -1f; // -1 = use config
+    [SerializeField] private Transform sphereCenterOverride;
     
     // Components
     protected SpriteRenderer spriteRenderer;
     private Camera targetCamera;
     private Transform cameraTransform;
+    
+    // Config & References
+    private GameConfig config;
     
     // Billboard Cache
     private Vector3 lastCameraPosition;
@@ -27,8 +30,9 @@ public class Billboard : MonoBehaviour
     
     void Awake()
     {
+        config = GameConfig.Instance;
         spriteRenderer = GetComponent<SpriteRenderer>();
-        targetCamera = Camera.main;
+        targetCamera = GameReferences.MainCamera;
         
         if (targetCamera != null)
         {
@@ -87,13 +91,16 @@ public class Billboard : MonoBehaviour
         
         Vector3 cameraPos = cameraTransform.position;
         
-        // Performance: Nur Update wenn Kamera bewegt
-        if (Vector3.SqrMagnitude(cameraPos - lastCameraPosition) < 0.001f && !needsBillboardUpdate)
+        // Performance: Use config threshold
+        float threshold = config?.billboardUpdateThreshold ?? 0.001f;
+        if (Vector3.SqrMagnitude(cameraPos - lastCameraPosition) < threshold && !needsBillboardUpdate)
             return;
         
         Vector3 direction = (cameraPos - transform.position).normalized;
         
-        if (constrainY)
+        // Use config setting for Y constraint
+        bool shouldConstrainY = constrainY || (config?.billboardConstrainY ?? false);
+        if (shouldConstrainY)
         {
             direction.y = 0;
             direction.Normalize();
@@ -107,22 +114,39 @@ public class Billboard : MonoBehaviour
     
     void PlaceOnSphere()
     {
-        if (sphereCenter == null)
-        {
-            var placer = GetComponentInParent<SphereBillboardPlacer>();
-            if (placer != null)
-            {
-                sphereCenter = placer.transform;
-            }
-        }
-        
+        Transform sphereCenter = GetSphereCenter();
         if (sphereCenter == null) return;
         
+        float radius = GetSphereRadius();
         Vector3 direction = (transform.position - sphereCenter.position).normalized;
-        Vector3 surfacePosition = sphereCenter.position + direction * sphereRadius;
+        Vector3 surfacePosition = sphereCenter.position + direction * radius;
         
         transform.position = surfacePosition;
         needsBillboardUpdate = true;
+    }
+    
+    Transform GetSphereCenter()
+    {
+        if (sphereCenterOverride != null)
+            return sphereCenterOverride;
+            
+        if (GameReferences.SphereCenter != null)
+            return GameReferences.SphereCenter;
+            
+        // Fallback: Check parent for SphereBillboardPlacer
+        var placer = GetComponentInParent<SphereBillboardPlacer>();
+        if (placer != null)
+            return placer.transform;
+            
+        return null;
+    }
+    
+    float GetSphereRadius()
+    {
+        if (sphereRadiusOverride > 0)
+            return sphereRadiusOverride;
+            
+        return config?.sphereRadius ?? 5f;
     }
     
     #region Registration System
@@ -145,7 +169,7 @@ public class Billboard : MonoBehaviour
     
     public void SetSphereRadius(float radius)
     {
-        sphereRadius = radius;
+        sphereRadiusOverride = radius;
         if (autoPlaceOnSphere)
         {
             PlaceOnSphere();
@@ -174,13 +198,23 @@ public class Billboard : MonoBehaviour
     
     public void SetSphereCenter(Transform center)
     {
-        sphereCenter = center;
+        sphereCenterOverride = center;
         needsBillboardUpdate = true;
     }
     
     public void ForceUpdate()
     {
         needsBillboardUpdate = true;
+    }
+    
+    public float GetCurrentSphereRadius()
+    {
+        return GetSphereRadius();
+    }
+    
+    public Transform GetCurrentSphereCenter()
+    {
+        return GetSphereCenter();
     }
     
     #endregion
@@ -203,6 +237,16 @@ public class Billboard : MonoBehaviour
     
     [ContextMenu("Force Update")]
     void DebugForceUpdate() => ForceUpdate();
+    
+    [ContextMenu("Debug Sphere Info")]
+    void DebugSphereInfo()
+    {
+        Debug.Log($"[{name}] Sphere Info:\n" +
+                 $"  Center: {GetCurrentSphereCenter()?.name ?? "NULL"}\n" +
+                 $"  Radius: {GetCurrentSphereRadius()}\n" +
+                 $"  Position: {transform.position}\n" +
+                 $"  Config Radius: {config?.sphereRadius ?? 0}");
+    }
     
     #endregion
 }
